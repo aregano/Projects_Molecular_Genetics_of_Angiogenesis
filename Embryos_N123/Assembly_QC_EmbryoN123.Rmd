@@ -1,0 +1,693 @@
+---
+title: "Setup Embryo Notch1/2/3 LOF and QC"
+author: "Alvaro Regano"
+date: "2023-07-20"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(Seurat)
+library(ggplot2)
+library(DoubletFinder)
+library(dittoSeq)
+library(patchwork)
+library(dplyr)
+library(celldex)
+library(SingleR)
+library(scRNAseq)
+library(SingleCellExperiment)
+library(escape)
+library(reshape2)
+library(tidyverse)
+library(ggrepel)
+library(ggplot2)
+
+# Color palette
+
+ditto_Colors <- dittoColors(reps = 1, get.names = F)
+
+colors_seurat <- c("#E7851E", "#B2A100", "#F8766D", "#00C087", "#00C0B2", "#D09400", "#00BCD6", "#00BC51", "#89AC00", "#45B500", "#00B3F2",
+                    "#D277FF", "#F166E8", "#29A3FF", "#FF689E", "#9C8DFF", "#FF61C7")
+
+```
+
+We extract and create Seurat objects of each feature matrix
+
+```{r Embryo1}
+raw_dir <- "../raw_data/Tomato/filtered_feature_bc_matrix"
+Embryo1 <- Read10X(data.dir = raw_dir)
+Embryo1 <- CreateSeuratObject(counts = Embryo1, min.cells = 3, min.features = 200)
+cells_OK <- colnames(Embryo1)
+Embryo1@meta.data$Condition <- "N123LOF"
+```
+
+```{r Embryo2}
+raw_dir <- "../raw_data/YFP/filtered_feature_bc_matrix"
+Embryo2 <- Read10X(data.dir = raw_dir)
+Embryo2 <- CreateSeuratObject(counts = Embryo2, min.cells = 3, min.features = 200)
+Embryo2@meta.data$Condition <- "N123WT"
+```
+
+## Merging Datasets
+
+```{r merge, fig.height=10, fig.width=10}
+
+# Merge datasets
+
+Embryo <- merge(Embryo1, Embryo2, project = "Embryo_N123LOF_Mosaic")
+table(Embryo@meta.data$Condition)
+rm(Embryo1.RbpjLOF, Embryo2.RbpjWt)
+# saveRDS(Embryo, "../rds/EmbryoN123.raw.rds")
+```
+
+```{r Load Embryo rds, fig.height=10, fig.width=10}
+
+# Embryo <- readRDS("../rds/EmbryoN123.raw.rds")
+```
+
+## Starting QC Analysis
+
+```{r QC Analysis, fig.height=20, fig.width=10}
+
+Embryo[["percent.mt"]] <- PercentageFeatureSet(Embryo, pattern = "^mt-")
+
+mito_genes <- rownames(Embryo)[grep("^mt-", rownames(Embryo))]
+
+mito_genes
+
+plot1 <- FeatureScatter(Embryo, feature1 = "nFeature_RNA",
+                        group.by = "orig.ident", feature2 = "percent.mt") +
+  geom_vline(xintercept = c(500,7500),linetype = 2 ) +
+  geom_hline(yintercept = 15 ,linetype = 2)
+plot2 <- FeatureScatter(Embryo, feature1 = "nCount_RNA",
+                        group.by = "orig.ident",feature2 = "nFeature_RNA")+
+  geom_hline(yintercept = c(500,7500),linetype = 2 )+
+  geom_vline(xintercept = c(1000,55000),linetype = 2 )
+
+# cairo_pdf("../Plots/QC/Scatterplot_features.pdf", height = 6, width = 8)
+plot1 / plot2
+# dev.off()
+
+# Ribosomal genes
+
+Embryo <- PercentageFeatureSet(Embryo, "^Rp[sl]", col.name = "percent_ribo")
+
+# Hemoglobin genes
+
+Embryo <- PercentageFeatureSet(Embryo, "^Hb[^(p)]", col.name = "percent_hb")
+
+# Violin Plots
+
+feats <- c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent_ribo", "percent_hb")
+# cairo_pdf("../Plots/QC/VlnPlot_features.pdf", height = 6, width = 8)
+VlnPlot(Embryo, group.by = "orig.ident", features = feats, pt.size = 0.1, ncol = 3) +
+  NoLegend()
+# dev.off()
+
+
+
+
+```
+
+
+## Features to cut out
+
+Cells with less than 500 genes (low quality) and more than 7500 (possibly cell doublets) were removed.Cell with less than 1000 transcripts and more than 55000 were removed.
+
+Cells with more than 10% mitochondrial genes, more than 35% ribosomal genes and more than 1% hemoglobin genes were removed.
+
+
+```{r clone size 2, fig.height=10, fig.width=10}
+
+# Clear up the plots
+
+Embryo <- subset(Embryo,
+                 subset = nFeature_RNA > 500 & nFeature_RNA < 7500 &
+                   nCount_RNA > 1000 & nCount_RNA < 55000  & percent.mt < 10 & percent_ribo < 35 & percent_hb < 1)
+
+```
+
+
+## Normalizing and Scaling Data, Followed by selecting the 2000 most highly variable genes (HVG)
+
+```{r Normalization, fig.height=10, fig.width=10}
+
+# Normalize data
+
+Embryo <- NormalizeData(Embryo, 
+                                normalization.method = "LogNormalize",
+                                scale.factor = 10000)
+
+# Identification of highly variable features (feature selection)
+
+Embryo <- FindVariableFeatures(Embryo, 
+                                       selection.method = "vst",
+                                       nfeatures = 2000)
+top10 <- head(VariableFeatures(Embryo), 10)
+top10
+
+vars <- VariableFeatures(Embryo)
+
+vars <- as.data.frame(vars) 
+
+vars %>%  filter(!grepl("^Hb[^(p)]", 1)) %>% filter(!grepl("^mt-", 1)) %>% filter(!grepl("^Rp[sl]", 1)) %>% nrow()
+
+# There are no mitochondrial, ribosomal or hemmoglobine related genes in the to 2000 variable Features
+
+plot1 <- VariableFeaturePlot(Embryo)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+# cairo_pdf("../Plots/QC/Variable_features.pdf", height = 6, width = 8)
+plot2
+# dev.off()
+
+# Scaling the data
+
+all.genes <- rownames(Embryo)
+Embryo <- ScaleData(Embryo, features = all.genes)
+
+```
+
+
+## Perform Linear Dimensional Reduction
+
+```{r Dimensionality Reduction, fig.height=10, fig.width=10}
+
+## Perform linear dimensional reduction
+
+Embryo <- RunPCA(Embryo,
+                         features = VariableFeatures(object = Embryo))
+
+
+# Examine and visualize PCA results a few different ways
+
+# print(Embryo[["pca"]], dims = 1:5, nfeatures = 5)
+VizDimLoadings(Embryo, dims = 1:2, reduction = "pca")
+DimPlot(Embryo,group.by = "orig.ident", reduction = "pca")
+
+
+# Determine the 'dimensionality' of the dataset
+
+# Embryo <- JackStraw(Embryo, num.replicate = 100, dims = 30)
+# Embryo <- ScoreJackStraw(Embryo, dims = 1:30)
+# JackStrawPlot(Embryo, dims = 1:30)
+
+# cairo_pdf("../Plots/QC/ElbowPlot.pdf", height = 6, width = 6)
+ElbowPlot(Embryo, ndims = 30)
+# dev.off()
+
+```
+```{r DimHeatMap, fig.height=20, fig.width=20}
+DimHeatmap(Embryo, dims = 1:9, cells = 500, balanced = TRUE)
+```
+
+Out of the ElbowPlot it looks like 20 Dimensions is a good number of PCAs to go for
+
+
+```{r UMAP 2, fig.height=10, fig.width=10}
+
+
+# Cluster the cells
+
+Embryo <- FindNeighbors(Embryo, dims = 1:20, )
+Embryo <- FindClusters(Embryo, resolution = 0.1, verbose = F)
+Embryo <- FindClusters(Embryo, resolution = 0.2, verbose = F)
+Embryo <- FindClusters(Embryo, resolution = 0.35, verbose = F)
+
+
+#Run UMAP
+
+Embryo <- RunUMAP(Embryo, dims = 1:20,  verbose = F)
+
+# cairo_pdf("../Plots/QC/UMAP_res0.35.pdf", height = 6, width = 6)
+DimPlot(Embryo, group.by = "RNA_snn_res.0.35")
+# dev.off()
+
+# cairo_pdf("../Plots/QC/UMAP_res0.35.split.pdf", height = 6, width = 6)
+DimPlot(Embryo, group.by = "RNA_snn_res.0.35", split.by = "Condition")
+# dev.off()
+
+Idents(Embryo) <- "Condition"
+
+table(Embryo@active.ident)
+
+ # saveRDS(Embryo, "../rds/EmbryoN123.withDoublets.rds")
+
+```
+## Run DoubletFinder
+
+```{r loadrds, fig.height=10, fig.width=10}
+
+# Embryo <- readRDS("../rds/EmbryoN123.withDoublets.rds")
+
+```
+
+Since there are no HTOs or multiplexing, it is a good idea to run doubletfinder to rule out doublets
+
+```{r DoubletFinderv1, fig.height=10, fig.width=10}
+
+
+# Doublet Finder. Until we do not have a clear cluster identity it is better that we not use Doublet Finder
+
+# I will split the datasets in Wt v LOF because if not, fake doublets will be produced
+
+EmbryoLOF <- subset(Embryo, subset = Condition == "N123LOF")
+EmbryoWt <- subset(Embryo, subset = Condition == "N123LOF", invert = T)
+
+
+EmbryoLOF <- FindVariableFeatures(EmbryoLOF, 
+                               selection.method = "vst",
+                               nfeatures = 2000)
+top10 <- head(VariableFeatures(EmbryoLOF), 10)
+top10
+
+all.genes <- rownames(EmbryoLOF)
+EmbryoLOF <- ScaleData(EmbryoLOF, features = all.genes)
+
+
+## Perform linear dimensional reduction
+
+EmbryoLOF <- RunPCA(EmbryoLOF,
+                 features = VariableFeatures(object = EmbryoLOF))
+
+
+ElbowPlot(EmbryoLOF, ndims = 30)
+
+# In the case of Liver3_2Jul21 we can set up for 16 dimensions
+
+# Cluster the cells
+
+EmbryoLOF <- FindNeighbors(EmbryoLOF, dims = 1:20)
+EmbryoLOF <- FindClusters(EmbryoLOF, resolution = 0.1, verbose = F)
+EmbryoLOF <- FindClusters(EmbryoLOF, resolution = 0.2, verbose = F)
+EmbryoLOF <- FindClusters(EmbryoLOF, resolution = 0.35, verbose = F)
+
+#Run UMAP
+
+EmbryoLOF <- RunUMAP(EmbryoLOF, dims = 1:20, verbose = F)
+
+DimPlot(EmbryoLOF, group.by = "RNA_snn_res.0.35")
+
+
+# DoubletFinder can be broken up into 4 steps: (1) Generate artificial doublets from existing scRNA-seq data (2) Pre-process merged real-artificial data (3) Perform PCA and use the PC distance matrix to find each cell’s proportion of artificial k nearest neighbors (pANN) (4) Rank order and threshold pANN values according to the expected number of doublets
+
+# pK Identification (no ground-truth)
+sweep.res.list <- paramSweep(EmbryoLOF, PCs = 1:20, sct = FALSE)
+sweep.stats <- summarizeSweep(sweep.res.list, GT = FALSE)
+bcmvn <- find.pK(sweep.stats)
+
+# pK plot with numbers
+
+pK=as.numeric(as.character(bcmvn$pK))
+BCmetric=bcmvn$BCmetric
+pK_choose = pK[which(BCmetric %in% max(BCmetric))]
+
+par(mar=c(5,4,4,8)+1,cex.main=1.2,font.main=2)
+plot(x = pK, y = BCmetric, pch = 16,type="b",
+     col = "blue",lty=1)
+abline(v=pK_choose,lwd=2,col='red',lty=2)
+title("The BCmvn distributions")
+text(pK_choose,max(BCmetric),as.character(pK_choose),pos = 4,col = "red")
+
+pK_value <- pK_choose
+
+# Homotypic Doublet Proportion Estimate
+
+homotypic.prop <- modelHomotypic(Embryo@meta.data$RNA_snn_res.0.35)           ## ex: annotations <- seu_kidney@meta.data$ClusteringResults
+nExp_poi <- round(0.09*nrow(EmbryoLOF@meta.data))  ## Assuming 8% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+EmbryoLOF <- doubletFinder(EmbryoLOF, PCs = 1:20,
+                                 pN = 0.25, pK = pK_value,
+                                 nExp = nExp_poi, reuse.pANN = FALSE,
+                                 sct = FALSE)
+
+names(EmbryoLOF@meta.data[length(EmbryoLOF@meta.data)])
+
+```
+
+
+
+```{r DoubletFinderv2, fig.height=10, fig.width=10}
+EmbryoLOF <- doubletFinder(EmbryoLOF, PCs = 1:10, 
+                                 pN = 0.25, pK = pK_choose, # Get PK value from plot metric above
+                                 nExp = nExp_poi.adj,
+                                 reuse.pANN = names(EmbryoLOF@meta.data[length(EmbryoLOF@meta.data)]),
+                                 sct = FALSE)
+
+
+p1 <- DimPlot(EmbryoLOF, group.by=names(EmbryoLOF@meta.data[length(EmbryoLOF@meta.data)]),
+                 cols = c("red","grey"),
+                  reduction="umap", pt.size=0.3)
+
+p2 <- FeaturePlot(EmbryoLOF, reduction = "umap",
+                  features =  "nFeature_RNA")
+
+
+p1+p2
+
+
+names(EmbryoLOF@meta.data[length(EmbryoLOF@meta.data)])
+
+# It does not look like it is telling apart the doublets in most cases, looks like an overshooting. 
+# Most doublets must have been taken out in the main Liver analysis by HTO selection
+
+dittoBarPlot(object = EmbryoLOF,
+             var = names(EmbryoLOF@meta.data[length(EmbryoLOF@meta.data)]),
+             group.by = "RNA_snn_res.0.35")
+
+VlnPlot(EmbryoLOF, features =  "Ptprc",
+        group.by =  "RNA_snn_res.0.35", 
+        pt.size = 0.05 ) + theme(legend.position="none")
+
+
+
+```
+
+```{r DoubletFinderv3, fig.height=10, fig.width=10}
+
+EmbryoLOF <- EmbryoLOF[, which(EmbryoLOF@meta.data[length(EmbryoLOF@meta.data)] == "Singlet")]
+
+
+```
+
+
+Perform Doublet removal on EmbryoN123 Wildtype
+
+
+```{r DoubletFinderv1.2, fig.height=10, fig.width=10}
+
+
+# Doublet Finder. Until we do not have a clear cluster identity it is better that we not use Doublet Finder
+
+# I will split the datasets in Wt v LOF because if not, fake doublets will be produced
+
+
+EmbryoWt <- FindVariableFeatures(EmbryoWt, 
+                               selection.method = "vst",
+                               nfeatures = 2000)
+top10 <- head(VariableFeatures(EmbryoWt), 10)
+top10
+
+all.genes <- rownames(EmbryoWt)
+EmbryoWt <- ScaleData(EmbryoWt, features = all.genes)
+
+
+## Perform linear dimensional reduction
+
+EmbryoWt <- RunPCA(EmbryoWt,
+                 features = VariableFeatures(object = EmbryoWt))
+
+
+ElbowPlot(EmbryoWt, ndims = 30)
+
+# In the case of Liver3_2Jul21 we can set up for 16 dimensions
+
+# Cluster the cells
+
+EmbryoWt <- FindNeighbors(EmbryoWt, dims = 1:20)
+EmbryoWt <- FindClusters(EmbryoWt, resolution = 0.1, verbose = F)
+EmbryoWt <- FindClusters(EmbryoWt, resolution = 0.2, verbose = F)
+EmbryoWt <- FindClusters(EmbryoWt, resolution = 0.35, verbose = F)
+
+#Run UMAP
+
+EmbryoWt <- RunUMAP(EmbryoWt, dims = 1:20, verbose = F)
+
+DimPlot(EmbryoWt, group.by = "RNA_snn_res.0.35")
+
+
+# DoubletFinder can be broken up into 4 steps: (1) Generate artificial doublets from existing scRNA-seq data (2) Pre-process merged real-artificial data (3) Perform PCA and use the PC distance matrix to find each cell’s proportion of artificial k nearest neighbors (pANN) (4) Rank order and threshold pANN values according to the expected number of doublets
+
+# pK Identification (no ground-truth)
+sweep.res.list <- paramSweep(EmbryoWt, PCs = 1:20, sct = FALSE)
+sweep.stats <- summarizeSweep(sweep.res.list, GT = FALSE)
+bcmvn <- find.pK(sweep.stats)
+
+# pK plot with numbers
+
+pK=as.numeric(as.character(bcmvn$pK))
+BCmetric=bcmvn$BCmetric
+pK_choose = pK[which(BCmetric %in% max(BCmetric))]
+
+par(mar=c(5,4,4,8)+1,cex.main=1.2,font.main=2)
+plot(x = pK, y = BCmetric, pch = 16,type="b",
+     col = "blue",lty=1)
+abline(v=pK_choose,lwd=2,col='red',lty=2)
+title("The BCmvn distributions")
+text(pK_choose,max(BCmetric),as.character(pK_choose),pos = 4,col = "red")
+
+# Homotypic Doublet Proportion Estimate
+
+homotypic.prop <- modelHomotypic(Embryo@meta.data$RNA_snn_res.0.35)           ## ex: annotations <- seu_kidney@meta.data$ClusteringResults
+nExp_poi <- round(0.09*nrow(EmbryoWt@meta.data))  ## Assuming 8% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+EmbryoWt <- doubletFinder(EmbryoWt, PCs = 1:20,
+                                 pN = 0.25, pK = pK_choose,
+                                 nExp = nExp_poi, reuse.pANN = FALSE,
+                                 sct = FALSE)
+
+
+```
+
+
+
+```{r DoubletFinderv2.2, fig.height=10, fig.width=10}
+
+
+p1 <- DimPlot(EmbryoWt, group.by=names(EmbryoWt@meta.data[length(EmbryoWt@meta.data)]),
+                 cols = c("red","grey"),
+                  reduction="umap", pt.size=0.3)
+
+p2 <- FeaturePlot(EmbryoWt, reduction = "umap",
+                  features =  "nFeature_RNA")
+
+
+p1+p2
+
+
+table(EmbryoWt@meta.data[length(EmbryoWt@meta.data)])
+
+# It does not look like it is telling apart the doublets in most cases, looks like an overshooting. 
+# Most doublets must have been taken out in the main Liver analysis by HTO selection
+
+dittoBarPlot(object = EmbryoWt,
+             var = names(EmbryoWt@meta.data[length(EmbryoWt@meta.data)]),
+             group.by = "RNA_snn_res.0.35")
+
+
+VlnPlot(EmbryoWt, features =  "Ptprc",
+        group.by =  "RNA_snn_res.0.35", 
+        pt.size = 0.05 ) + theme(legend.position="none")
+
+
+```
+
+
+```{r DoubletFinderv3.2, fig.height=10, fig.width=10}
+
+EmbryoWt <- EmbryoWt[, which(EmbryoLOF@meta.data[length(EmbryoLOF@meta.data)] == "Singlet")]
+
+```
+
+## Merging and Performing QC Again
+
+```{r Normalization and QC, fig.height=10, fig.width=10}
+
+
+Embryo <- merge(EmbryoLOF, EmbryoWt, project = "Embryo_N123LOF_Mosaic")
+
+# Normalize data
+
+Embryo <- NormalizeData(Embryo, 
+                                normalization.method = "LogNormalize",
+                                scale.factor = 10000)
+
+# Identification of highly variable features (feature selection)
+
+Embryo <- FindVariableFeatures(Embryo, 
+                                       selection.method = "vst",
+                                       nfeatures = 2000)
+top10 <- head(VariableFeatures(Embryo), 10)
+top10
+
+vars <- VariableFeatures(Embryo)
+
+vars <- as.data.frame(vars) 
+
+vars %>%  filter(!grepl("^Hb[^(p)]", 1)) %>% filter(!grepl("^mt-", 1)) %>% filter(!grepl("^Rp[sl]", 1)) %>% nrow()
+
+# There are no mitochondrial, ribosomal or hemmoglobine related genes in the to 2000 variable Features
+
+plot1 <- VariableFeaturePlot(Embryo)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+# cairo_pdf("../Plots/QC/Variable_features_Singlets.pdf", height = 6, width = 8)
+plot2
+# dev.off()
+
+# Scaling the data
+
+all.genes <- rownames(Embryo)
+Embryo <- ScaleData(Embryo, features = all.genes)
+
+```
+
+
+## Perform Linear Dimensional Reduction
+
+```{r DimRed, fig.height=10, fig.width=10}
+
+## Perform linear dimensional reduction
+
+Embryo <- RunPCA(Embryo,
+                         features = VariableFeatures(object = Embryo))
+
+
+# Examine and visualize PCA results a few different ways
+
+print(Embryo[["pca"]], dims = 1:5, nfeatures = 5)
+VizDimLoadings(Embryo, dims = 1:2, reduction = "pca")
+DimPlot(Embryo,group.by = "orig.ident", reduction = "pca")
+DimHeatmap(Embryo, dims = 1:9, cells = 500, balanced = TRUE)
+
+# Determine the 'dimensionality' of the dataset
+
+# Embryo <- JackStraw(Embryo, num.replicate = 100, dims = 30)
+# Embryo <- ScoreJackStraw(Embryo, dims = 1:30)
+# JackStrawPlot(Embryo, dims = 1:30)
+
+# cairo_pdf("../Plots/QC/ElbowPlot_Singlets.pdf", height = 6, width = 6)
+ElbowPlot(Embryo, ndims = 30)
+# dev.off()
+
+```
+
+Out of the ElbowPlot it looks like 20 Dimensions is still a good number of PCAs to go for
+
+
+```{r UMAP, fig.height=10, fig.width=10}
+
+
+# Cluster the cells
+
+Embryo <- FindNeighbors(Embryo, dims = 1:20)
+Embryo <- FindClusters(Embryo, resolution = 0.1, verbose = F)
+Embryo <- FindClusters(Embryo, resolution = 0.2, verbose = F)
+Embryo <- FindClusters(Embryo, resolution = 0.35, verbose = F)
+
+
+#Run UMAP
+
+Embryo <- RunUMAP(Embryo, dims = 1:20, verbose = F)
+
+# cairo_pdf("../Plots/QC/UMAP_res0.35_Singlets.pdf", height = 6, width = 6)
+DimPlot(Embryo, group.by = "RNA_snn_res.0.35")
+# dev.off()
+
+# cairo_pdf("../Plots/QC/UMAP_res0.35.split.Singlets.pdf", height = 6, width = 6)
+DimPlot(Embryo, group.by = "RNA_snn_res.0.35", split.by = "Condition")
+# dev.off()
+
+Idents(Embryo) <- "Condition"
+
+table(Embryo@active.ident)
+
+# saveRDS(Embryo, "../rds/EmbryoN123.Singlets.rds")
+
+```
+
+# Perform Label Transfer
+
+I will perform Labeltransfer on datasets containing singlets
+
+```{r LabelTransfer db, fig.height=10, fig.width=10}
+
+
+?celldex::MouseRNAseqData()
+
+mmdb <- celldex::MouseRNAseqData()
+
+
+```
+
+```{r LabelTransfer, fig.height=10, fig.width=10}
+
+# Singlets
+# Embryo <- readRDS("../rds/EmbryoN123.Singlets.rds")
+
+# Doublets
+# Embryo <- readRDS("../rds/EmbryoN123.withDoublets.rds")
+
+data.filt <- JoinLayers(Embryo)
+sce <- as.SingleCellExperiment(data.filt, assay = "RNA")
+
+
+
+pred.Embryo.mm <- SingleR(test = sce, ref = mmdb, assay.type.test=1, 
+                     labels = mmdb$label.main)
+
+```
+
+```{r LabelTransfer to rds, fig.height=10, fig.width=10}
+Embryo@meta.data$mmdb <- pred.Embryo.mm$labels
+
+# Embryo@meta.data$hpca <- pred.Embryo.hs$labels
+
+# Embryo@meta.data$bpen <- pred.Embryo.bpen$labels
+```
+
+
+```{r LabelTransfer plot, fig.height=14, fig.width=25}
+
+
+p25 <- DimPlot(Embryo, pt.size = 1.2, group.by = "mmdb", reduction = "umap", split.by = "Condition")+ NoLegend()+
+  theme(strip.text.x = element_text(size = 24), plot.title = element_blank())+NoLegend()+xlab("UMAP_1")+ylab("UMAP_2")
+
+p26a <- DimPlot(Embryo, pt.size = 1.2, group.by = "mmdb", reduction = "umap")+theme(legend.text = element_text(size = 14), axis.title.x = element_blank(), axis.line.y = element_blank(), axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks = element_blank(), plot.title = element_text(hjust = 0.5, size = 24))+ ggtitle("Mouse Database")
+p26 <- LabelClusters(p26a, id = "mmdb", box = T, size = 3,
+                     clusters = c("Cardiomyocytes", "Endothelial cells", "Epithelial cells", "Erythrocytes", "Fibroblasts", "Hepatocytes", "Macrophages", "Monocytes", "Neurons"),
+                     repel = T, max.overlaps = 30)+ theme(legend.position="none")
+
+require(scales)
+
+Embryo@meta.data$mmdb <- as.factor(Embryo@meta.data$mmdb)
+
+identities <- levels(Embryo@meta.data$mmdb)
+my_color_palette <- hue_pal()(length(identities))
+
+p26b <- dittoBarPlot(Embryo, var = "mmdb", group.by = "Condition", color.panel = my_color_palette)
+
+p27 <- list(p25, p26, p26b)
+
+design <- c(patchwork::area(1, 1, 1, 4), patchwork::area(1, 5, 1, 6), patchwork::area(1, 7, 1, 7))
+
+p28 <- Reduce( `+`,  p27)+patchwork::plot_layout(design = design)
+
+
+
+# cairo_pdf("../Plots/QC/UMAP_LabelTransfer_Doublets.pdf",  width = 25, height = 21, family = "Arial")
+# cairo_pdf("../Plots/QC/UMAP_LabelTransfer.pdf",  width = 25, height = 21, family = "Arial")
+p28
+# dev.off()
+
+table(Embryo@meta.data$Condition)
+
+# saveRDS(Embryo, "../rds/EmbryoN123.Singlets.rds")
+# saveRDS(Embryo, "../rds/EmbryoN123.Doublets.rds")
+
+```
+
+# R Session
+
+```{r session, fig.height=21, fig.width=25}
+
+sessionInfo()
+
+```

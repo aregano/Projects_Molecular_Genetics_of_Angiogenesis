@@ -1,0 +1,1348 @@
+---
+title: "Histogram_per_cluster_MSR1_v_WNT2"
+author: "Alvaro Regano"
+date: "9/29/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+```
+
+# About the analysis
+
+  The data was taken from the Liver 20-01-21 sample processed by Carlos Torroja. In brief, we want to find out if there is a unbalance in the arterio-venous differentiation of LOF cells in the 3 conditions (Dll4LOF, RbpjLOF and Notch1LOF). For that we have selected 2 markers, MSR1 and WNT2, the former a validated arterial marker and the latter a venous one.
+  
+  This analysis follows the one performed with the previous Histogram of MSR1vWNT2. Now we want to pinpoint where in the different clusters do these cells localize, and what % of each condition belongs to each cluster.
+  
+  Same criteria will be followed for the gene range between MSR1 and WNT2
+  
+  no expression = MSR1 and WNT2<=0
+  
+  MSR1lo-noWNT2 = 0<MSR1<=2 and WNT2<=0
+  
+  MSR1hi-noWNT2 = MSR1>2 and WNT2<=0
+  
+  noMSR1-WNT2lo = MSR1<=0 and 0<WNT2<=2
+  
+  MSR1lo-WNT2lo = 0<MSR1<=2 and 0<WNT2<=2
+  
+  MSR1hi-WNT2lo = MSR1>2 and 0<WNT2<=2
+  
+  noMSR1-WNT2hi = MSR1<=0 and WNT2>2
+  
+  MSR1lo-WNT2hi = 0<MSR1<=2 and WNT2>2
+  
+  MSR1hi-WNT2hi = MSR1>2 and WNT2>2
+  
+# Objective
+
+  The goal is to find how the different rates of MSR1vWNT2 cells localize around the different set of clusters previously stablished, so as to find key statistical differences in the cell transcriptomes producing the arteriovenous differentiation in the Liver dataset.
+
+```{r library}
+library("Seurat")
+library("ggplot2")
+library("RColorBrewer")
+library("openxlsx")
+```
+
+## Analysis
+
+You can also embed plots, for example:
+
+```{r loading and subsetting data based on conditions}
+
+  Carlos <- readRDS("SC.Analysis.SecondPass.RNA.Singlets.Endothelial.ManualClustering.seuratSC.Final.V4.rds")
+  Control <- subset(x = Carlos, subset = Condition == "Control")
+  Dll4KO <- subset(x = Carlos, subset = Condition == "Dll4KO")
+  RbpjKO <- subset(x = Carlos, subset = Condition == "RBPJKO")
+  Notch1KO <- subset(x = Carlos, subset = Condition == "NOTCH1KO")
+  
+  my_palette <- c(brewer.pal(10, "Paired"))
+  
+```
+
+
+```{r subsets per condition: Control}
+
+  lo_lo <- subset(Control, subset = MSR1 <= 0 & WNT2 <= 0)
+  med_lo <- subset(Control, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 <= 0)
+  hi_lo <- subset(Control, subset = MSR1 > 2 & WNT2 <= 0)
+  
+  lo_med <- subset(Control, subset = MSR1 <= 0 & WNT2 > 0 & WNT2 <= 2)
+  med_med <- subset(Control, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 0 & WNT2 <= 2)
+  hi_med <- subset(Control, subset = MSR1 > 2 & WNT2 > 0 & WNT2 <= 2)
+  
+  lo_hi <- subset(Control, subset = MSR1 <= 0 & WNT2 > 0)
+  med_hi <- subset(Control, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 2)
+  hi_hi <- subset(Control, subset = MSR1 > 2 & WNT2 > 2)
+  
+
+  
+```
+
+```{r subsets per cluster: Control}
+
+  lo_lo_C0a <- subset(lo_lo, idents = "C0a")
+  lo_lo_C0v <- subset(lo_lo, idents = "C0v")
+  lo_lo_C1 <- subset(lo_lo, idents = "C1")
+  lo_lo_C2 <- subset(lo_lo, idents = "C2")
+  #lo_lo_C3 <- subset(lo_lo, idents = "C3")
+  lo_lo_C3 <- 0
+  lo_lo_C4ip <- subset(lo_lo, idents = "C4ip")
+  lo_lo_C4p <- subset(lo_lo, idents = "C4p")
+  lo_lo_C5 <- subset(lo_lo, idents = "C5")
+  lo_lo_C6a <- subset(lo_lo, idents = "C6a")
+  #lo_lo_C6v <- subset(lo_lo, idents = "C6v")
+  lo_lo_C6v <- 0
+  
+  med_lo_C0a <- subset(med_lo, idents = "C0a")
+  med_lo_C0v <- subset(med_lo, idents = "C0v")
+  med_lo_C1 <- subset(med_lo, idents = "C1")
+  med_lo_C2 <- subset(med_lo, idents = "C2")
+  # med_lo_C3 <- subset(med_lo, idents = "C3")
+  med_lo_C3 <- 0
+  med_lo_C4ip <- subset(med_lo, idents = "C4ip")
+  med_lo_C4p <- subset(med_lo, idents = "C4p")
+  med_lo_C5 <- subset(med_lo, idents = "C5")
+  med_lo_C6a <- subset(med_lo, idents = "C6a")
+  # med_lo_C6v <- subset(med_lo, idents = "C6v")
+  med_lo_C6v <- 0
+
+  hi_lo_C0a <- subset(hi_lo, idents = "C0a")
+  hi_lo_C0v <- subset(hi_lo, idents = "C0v")
+  #hi_lo_C1 <- subset(hi_lo, idents = "C1")
+  hi_lo_C1 <- 0
+  hi_lo_C2 <- subset(hi_lo, idents = "C2")
+  #hi_lo_C3 <- subset(hi_lo, idents = "C3")
+  hi_lo_C3 <- 0
+  hi_lo_C4ip <- subset(hi_lo, idents = "C4ip")
+  #hi_lo_C4p <- subset(hi_lo, idents = "C4p")
+  hi_lo_C4p <- 0
+  hi_lo_C5 <- subset(hi_lo, idents = "C5")
+  hi_lo_C6a <- subset(hi_lo, idents = "C6a")
+  #hi_lo_C6v <- subset(hi_lo, idents = "C6v")
+  hi_lo_C6v <- 0
+  
+  lo_med_C0a <- subset(lo_med, idents = "C0a")
+  lo_med_C0v <- subset(lo_med, idents = "C0v")
+  lo_med_C1 <- subset(lo_med, idents = "C1")
+  lo_med_C2 <- subset(lo_med, idents = "C2")
+  #lo_med_C3 <- subset(lo_med, idents = "C3")
+  lo_med_C3 <- 0
+  lo_med_C4ip <- subset(lo_med, idents = "C4ip")
+  lo_med_C4p <- subset(lo_med, idents = "C4p")
+  lo_med_C5 <- subset(lo_med, idents = "C5")
+  lo_med_C6a <- subset(lo_med, idents = "C6a")
+  lo_med_C6v <- subset(lo_med, idents = "C6v")
+  
+  med_med_C0a <- subset(med_med, idents = "C0a")
+  med_med_C0v <- subset(med_med, idents = "C0v")
+  med_med_C1 <- subset(med_med, idents = "C1")
+  med_med_C2 <- subset(med_med, idents = "C2")
+  #med_med_C3 <- subset(med_med, idents = "C3")
+  med_med_C3 <- 0
+  med_med_C4ip <- subset(med_med, idents = "C4ip")
+  med_med_C4p <- subset(med_med, idents = "C4p")
+  #med_med_C5 <- subset(med_med, idents = "C5")
+  med_med_C5 <- 0
+  med_med_C6a <- subset(med_med, idents = "C6a")
+  med_med_C6v <- subset(med_med, idents = "C6v")
+  
+  hi_med_C0a <- subset(hi_med, idents = "C0a")
+  hi_med_C0v <- subset(hi_med, idents = "C0v")
+  hi_med_C1 <- subset(hi_med, idents = "C1")
+  hi_med_C2 <- subset(hi_med, idents = "C2")
+  # hi_med_C3 <- subset(hi_med, idents = "C3")
+  hi_med_C3 <- 0
+  hi_med_C4ip <- subset(hi_med, idents = "C4ip")
+  #hi_med_C4p <- subset(hi_med, idents = "C4p")
+  hi_med_C4p <- 0
+  #hi_med_C5 <- subset(hi_med, idents = "C5")
+  hi_med_C5 <- 0
+  hi_med_C6a <- subset(hi_med, idents = "C6a")
+  # hi_med_C6v <- subset(hi_med, idents = "C6v")
+  hi_med_C6v <- 0
+  
+  lo_hi_C0a <- subset(lo_hi, idents = "C0a")
+  lo_hi_C0v <- subset(lo_hi, idents = "C0v")
+  lo_hi_C1 <- subset(lo_hi, idents = "C1")
+  lo_hi_C2 <- subset(lo_hi, idents = "C2")
+  #lo_hi_C3 <- subset(lo_hi, idents = "C3")
+  lo_hi_C3 <- 0
+  lo_hi_C4ip <- subset(lo_hi, idents = "C4ip")
+  lo_hi_C4p <- subset(lo_hi, idents = "C4p")
+  lo_hi_C5 <- subset(lo_hi, idents = "C5")
+  lo_hi_C6a <- subset(lo_hi, idents = "C6a")
+  lo_hi_C6v <- subset(lo_hi, idents = "C6v")
+  
+  med_hi_C0a <- subset(med_hi, idents = "C0a")
+  med_hi_C0v <- subset(med_hi, idents = "C0v")
+  #med_hi_C1 <- subset(med_hi, idents = "C1")
+  med_hi_C1 <- 0
+  med_hi_C2 <- subset(med_hi, idents = "C2")
+  #med_hi_C3 <- subset(med_hi, idents = "C3")
+  med_hi_C3 <- 0
+  # med_hi_C4ip <- subset(med_hi, idents = "C4ip")
+  med_hi_C4ip <- 0
+  # med_hi_C4p <- subset(med_hi, idents = "C4p")
+  med_hi_C4p <- 0
+  # med_hi_C5 <- subset(med_hi, idents = "C5")
+  med_hi_C5 <- 0
+  # med_hi_C6a <- subset(med_hi, idents = "C6a")
+  med_hi_C6a <- 0
+  med_hi_C6v <- subset(med_hi, idents = "C6v")
+  
+  hi_hi_C0a <- subset(hi_hi, idents = "C0a")
+  # hi_hi_C0v <- subset(hi_hi, idents = "C0v")
+  hi_hi_C0v <- 0
+  # hi_hi_C1 <- subset(hi_hi, idents = "C1")
+  hi_hi_C1 <- 0
+  hi_hi_C2 <- subset(hi_hi, idents = "C2")
+  #hi_hi_C3 <- subset(hi_hi, idents = "C3")
+  hi_hi_C3 <- 0
+  # hi_hi_C4ip <- subset(hi_hi, idents = "C4ip")
+  hi_hi_C4ip <- 0
+  # hi_hi_C4p <- subset(hi_hi, idents = "C4p")
+  hi_hi_C4p <- 0
+  # hi_hi_C5 <- subset(hi_hi, idents = "C5")
+  hi_hi_C5 <- 0
+  # hi_hi_C6a <- subset(hi_hi, idents = "C6a")
+  hi_hi_C6a <- 0
+  # hi_hi_C6v <- subset(hi_hi, idents = "C6v")
+  hi_hi_C6v <- 0
+  
+  lo_lo_h1 <- ncol(lo_lo_C0a)
+  lo_lo_h2 <- ncol(lo_lo_C0v)
+  lo_lo_h3 <- ncol(lo_lo_C1)
+  lo_lo_h4 <- ncol(lo_lo_C2)
+  lo_lo_h5 <- ncol(lo_lo_C3)
+  lo_lo_h6 <- ncol(lo_lo_C4ip)
+  lo_lo_h7 <- ncol(lo_lo_C4p)
+  lo_lo_h8 <- ncol(lo_lo_C5)
+  lo_lo_h9 <- ncol(lo_lo_C6a)
+  lo_lo_h10 <- ncol(lo_lo_C6v)
+  
+  med_lo_h1 <- ncol(med_lo_C0a)
+  med_lo_h2 <- ncol(med_lo_C0v)
+  med_lo_h3 <- ncol(med_lo_C1)
+  med_lo_h4 <- ncol(med_lo_C2)
+  med_lo_h5 <- ncol(med_lo_C3)
+  med_lo_h6 <- ncol(med_lo_C4ip)
+  med_lo_h7 <- ncol(med_lo_C4p)
+  med_lo_h8 <- ncol(med_lo_C5)
+  med_lo_h9 <- ncol(med_lo_C6a)
+  med_lo_h10 <- ncol(med_lo_C6v) 
+  
+  hi_lo_h1 <- ncol(hi_lo_C0a)
+  hi_lo_h2 <- ncol(hi_lo_C0v)
+  hi_lo_h3 <- ncol(hi_lo_C1)
+  hi_lo_h4 <- ncol(hi_lo_C2)
+  hi_lo_h5 <- ncol(hi_lo_C3)
+  hi_lo_h6 <- ncol(hi_lo_C4ip)
+  hi_lo_h7 <- ncol(hi_lo_C4p)
+  hi_lo_h8 <- ncol(hi_lo_C5)
+  hi_lo_h9 <- ncol(hi_lo_C6a)
+  hi_lo_h10 <- ncol(hi_lo_C6v)
+  
+  lo_med_h1 <- ncol(lo_med_C0a)
+  lo_med_h2 <- ncol(lo_med_C0v)
+  lo_med_h3 <- ncol(lo_med_C1)
+  lo_med_h4 <- ncol(lo_med_C2)
+  lo_med_h5 <- ncol(lo_med_C3)
+  lo_med_h6 <- ncol(lo_med_C4ip)
+  lo_med_h7 <- ncol(lo_med_C4p)
+  lo_med_h8 <- ncol(lo_med_C5)
+  lo_med_h9 <- ncol(lo_med_C6a)
+  lo_med_h10 <- ncol(lo_med_C6v)
+  
+  med_med_h1 <- ncol(med_med_C0a)
+  med_med_h2 <- ncol(med_med_C0v)
+  med_med_h3 <- ncol(med_med_C1)
+  med_med_h4 <- ncol(med_med_C2)
+  med_med_h5 <- ncol(med_med_C3)
+  med_med_h6 <- ncol(med_med_C4ip)
+  med_med_h7 <- ncol(med_med_C4p)
+  med_med_h8 <- ncol(med_med_C5)
+  med_med_h9 <- ncol(med_med_C6a)
+  med_med_h10 <- ncol(med_med_C6v)
+  
+  hi_med_h1 <- ncol(hi_med_C0a)
+  hi_med_h2 <- ncol(hi_med_C0v)
+  hi_med_h3 <- ncol(hi_med_C1)
+  hi_med_h4 <- ncol(hi_med_C2)
+  hi_med_h5 <- ncol(hi_med_C3)
+  hi_med_h6 <- ncol(hi_med_C4ip)
+  hi_med_h7 <- ncol(hi_med_C4p)
+  hi_med_h8 <- ncol(hi_med_C5)
+  hi_med_h9 <- ncol(hi_med_C6a)
+  hi_med_h10 <- ncol(hi_med_C6v)
+  
+  lo_hi_h1 <- ncol(lo_hi_C0a)
+  lo_hi_h2 <- ncol(lo_hi_C0v)
+  lo_hi_h3 <- ncol(lo_hi_C1)
+  lo_hi_h4 <- ncol(lo_hi_C2)
+  lo_hi_h5 <- ncol(lo_hi_C3)
+  lo_hi_h6 <- ncol(lo_hi_C4ip)
+  lo_hi_h7 <- ncol(lo_hi_C4p)
+  lo_hi_h8 <- ncol(lo_hi_C5)
+  lo_hi_h9 <- ncol(lo_hi_C6a)
+  lo_hi_h10 <- ncol(lo_hi_C6v)
+
+  med_hi_h1 <- ncol(med_hi_C0a)
+  med_hi_h2 <- ncol(med_hi_C0v)
+  med_hi_h3 <- ncol(med_hi_C1)
+  med_hi_h4 <- ncol(med_hi_C2)
+  med_hi_h5 <- ncol(med_hi_C3)
+  med_hi_h6 <- ncol(med_hi_C4ip)
+  med_hi_h7 <- ncol(med_hi_C4p)
+  med_hi_h8 <- ncol(med_hi_C5)
+  med_hi_h9 <- ncol(med_hi_C6a)
+  med_hi_h10 <- ncol(med_hi_C6v)
+  
+  hi_hi_h1 <- ncol(hi_hi_C0a)
+  hi_hi_h2 <- ncol(hi_hi_C0v)
+  hi_hi_h3 <- ncol(hi_hi_C1)
+  hi_hi_h4 <- ncol(hi_hi_C2)
+  hi_hi_h5 <- ncol(hi_hi_C3)
+  hi_hi_h6 <- ncol(hi_hi_C4ip)
+  hi_hi_h7 <- ncol(hi_hi_C4p)
+  hi_hi_h8 <- ncol(hi_hi_C5)
+  hi_hi_h9 <- ncol(hi_hi_C6a)
+  hi_hi_h10 <- ncol(hi_hi_C6v)
+  
+  ncell_list_per_cluster_Control <- matrix(c( lo_lo_h1, lo_lo_h2, lo_lo_h3, lo_lo_h4, 0, lo_lo_h6, lo_lo_h7, lo_lo_h8, lo_lo_h9, 0,  hi_lo_h1, hi_lo_h2, 0, hi_lo_h4, 0, hi_lo_h6, 0, hi_lo_h8, hi_lo_h9, 0,  med_lo_h1, med_lo_h2, med_lo_h3, med_lo_h4, 0, med_lo_h6, med_lo_h7, med_lo_h8, med_lo_h9, 0,  hi_med_h1, hi_med_h2, hi_med_h3, hi_med_h4, 0, hi_med_h6, 0, 0, hi_med_h9, 0,  med_med_h1, med_med_h2, med_med_h3, med_med_h4, 0, med_med_h6, med_med_h7, 0, med_med_h9, med_med_h10,  hi_hi_h1, 0, 0, hi_hi_h4, 0, 0, 0, 0, 0, 0,  med_hi_h1, med_hi_h2, 0, med_hi_h4, 0, 0, 0, 0, 0, med_hi_h10, lo_med_h1, lo_med_h2, lo_med_h3, lo_med_h4, 0, lo_med_h6, lo_med_h7, lo_med_h8, lo_med_h9, lo_med_h10,  lo_hi_h1, lo_hi_h2, lo_hi_h3, lo_hi_h4, 0, lo_hi_h6, lo_hi_h7, lo_hi_h8, lo_hi_h9, lo_hi_h10), ncol = 9, nrow = 10, 
+  dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                               c("no expr", "MSR1hi-noWNT2", "MSR1lo-noWNT2", "MSR1hi-WNT2lo", "MSR1lo-WNT2lo", "MSR1hi-WNT2hi", "MSR1lo-WNT2hi", "noMSR1-WNT2lo", "noMSR1-WNT2hi")))
+  
+  ncell_list_per_cluster_Control
+  
+```
+
+```{r subsets per condition: Dll4KO}
+
+  lo_lo <- subset(Dll4KO, subset = MSR1 <= 0 & WNT2 <= 0)
+  med_lo <- subset(Dll4KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 <= 0)
+  # hi_lo <- subset(Dll4KO, subset = MSR1 > 2 & WNT2 <= 0)
+  hi_lo <- 0
+  
+  lo_med <- subset(Dll4KO, subset = MSR1 <= 0 & WNT2 > 0 & WNT2 <= 2)
+  med_med <- subset(Dll4KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 0 & WNT2 <= 2)
+  # hi_med <- subset(Dll4KO, subset = MSR1 > 2 & WNT2 > 0 & WNT2 <= 2)
+  hi_med <- 0
+  
+  lo_hi <- subset(Dll4KO, subset = MSR1 <= 0 & WNT2 > 0)
+  med_hi <- subset(Dll4KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 2)
+  # hi_hi <- subset(Dll4KO, subset = MSR1 > 2 & WNT2 > 2)
+  hi_hi <- 0
+
+  
+```
+
+```{r subsets per cluster: Dll4KO}
+
+  lo_lo_C0a <- subset(lo_lo, idents = "C0a")
+  lo_lo_C0v <- subset(lo_lo, idents = "C0v")
+  lo_lo_C1 <- subset(lo_lo, idents = "C1")
+  lo_lo_C2 <- subset(lo_lo, idents = "C2")
+  lo_lo_C3 <- subset(lo_lo, idents = "C3")
+  lo_lo_C4ip <- subset(lo_lo, idents = "C4ip")
+  lo_lo_C4p <- subset(lo_lo, idents = "C4p")
+  lo_lo_C5 <- subset(lo_lo, idents = "C5")
+  lo_lo_C6a <- subset(lo_lo, idents = "C6a")
+  # lo_lo_C6v <- subset(lo_lo, idents = "C6v")
+  lo_lo_C6v <- 0
+  
+  # med_lo_C0a <- subset(med_lo, idents = "C0a")
+  med_lo_C0a <- 0
+  med_lo_C0v <- subset(med_lo, idents = "C0v")
+  med_lo_C1 <- subset(med_lo, idents = "C1")
+  # med_lo_C2 <- subset(med_lo, idents = "C2")
+  med_lo_C2 <- 0
+  med_lo_C3 <- subset(med_lo, idents = "C3")
+  med_lo_C4ip <- subset(med_lo, idents = "C4ip")
+  med_lo_C4p <- subset(med_lo, idents = "C4p")
+  med_lo_C5 <- subset(med_lo, idents = "C5")
+  med_lo_C6a <- subset(med_lo, idents = "C6a")
+  # med_lo_C6v <- subset(med_lo, idents = "C6v")
+  med_lo_C6v <- 0
+
+  # hi_lo_C0a <- subset(hi_lo, idents = "C0a")
+  # hi_lo_C0v <- subset(hi_lo, idents = "C0v")
+  # hi_lo_C1 <- subset(hi_lo, idents = "C1")
+  # hi_lo_C2 <- subset(hi_lo, idents = "C2")
+  # hi_lo_C3 <- subset(hi_lo, idents = "C3")
+  # hi_lo_C4ip <- subset(hi_lo, idents = "C4ip")
+  # hi_lo_C4p <- subset(hi_lo, idents = "C4p")
+  # hi_lo_C5 <- subset(hi_lo, idents = "C5")
+  # hi_lo_C6a <- subset(hi_lo, idents = "C6a")
+  # hi_lo_C6v <- subset(hi_lo, idents = "C6v")
+  
+  lo_med_C0a <- subset(lo_med, idents = "C0a")
+  lo_med_C0v <- subset(lo_med, idents = "C0v")
+  lo_med_C1 <- subset(lo_med, idents = "C1")
+  lo_med_C2 <- subset(lo_med, idents = "C2")
+  lo_med_C3 <- subset(lo_med, idents = "C3")
+  lo_med_C4ip <- subset(lo_med, idents = "C4ip")
+  lo_med_C4p <- subset(lo_med, idents = "C4p")
+  lo_med_C5 <- subset(lo_med, idents = "C5")
+  lo_med_C6a <- subset(lo_med, idents = "C6a")
+  lo_med_C6v <- subset(lo_med, idents = "C6v")
+  
+  med_med_C0a <- subset(med_med, idents = "C0a")
+  med_med_C0v <- subset(med_med, idents = "C0v")
+  med_med_C1 <- subset(med_med, idents = "C1")
+  med_med_C2 <- subset(med_med, idents = "C2")
+  med_med_C3 <- subset(med_med, idents = "C3")
+  med_med_C4ip <- subset(med_med, idents = "C4ip")
+  med_med_C4p <- subset(med_med, idents = "C4p")
+  # med_med_C5 <- subset(med_med, idents = "C5")
+  med_med_C5 <- 0
+  med_med_C6a <- subset(med_med, idents = "C6a")
+  # med_med_C6v <- subset(med_med, idents = "C6v")
+  med_med_C6v <- 0
+  
+  # hi_med_C0a <- subset(hi_med, idents = "C0a")
+  # hi_med_C0v <- subset(hi_med, idents = "C0v")
+  # hi_med_C1 <- subset(hi_med, idents = "C1")
+  # hi_med_C2 <- subset(hi_med, idents = "C2")
+  # hi_med_C3 <- subset(hi_med, idents = "C3")
+  # hi_med_C4ip <- subset(hi_med, idents = "C4ip")
+  # hi_med_C4p <- subset(hi_med, idents = "C4p")
+  # hi_med_C5 <- subset(hi_med, idents = "C5")
+  # hi_med_C6a <- subset(hi_med, idents = "C6a")
+  # hi_med_C6v <- subset(hi_med, idents = "C6v")
+  
+  lo_hi_C0a <- subset(lo_hi, idents = "C0a")
+  lo_hi_C0v <- subset(lo_hi, idents = "C0v")
+  lo_hi_C1 <- subset(lo_hi, idents = "C1")
+  lo_hi_C2 <- subset(lo_hi, idents = "C2")
+  lo_hi_C3 <- subset(lo_hi, idents = "C3")
+  lo_hi_C4ip <- subset(lo_hi, idents = "C4ip")
+  lo_hi_C4p <- subset(lo_hi, idents = "C4p")
+  lo_hi_C5 <- subset(lo_hi, idents = "C5")
+  lo_hi_C6a <- subset(lo_hi, idents = "C6a")
+  lo_hi_C6v <- subset(lo_hi, idents = "C6v")
+  
+  # med_hi_C0a <- subset(med_hi, idents = "C0a")
+  med_hi_C0a <- 0
+  # med_hi_C0v <- subset(med_hi, idents = "C0v")
+  med_hi_C0v <-0
+  med_hi_C1 <- subset(med_hi, idents = "C1")
+  # med_hi_C2 <- subset(med_hi, idents = "C2")
+  med_hi_C2 <- 0
+  # med_hi_C3 <- subset(med_hi, idents = "C3")
+  med_hi_C3 <- 0
+  # med_hi_C4ip <- subset(med_hi, idents = "C4ip")
+  med_hi_C4ip <- 0
+  # med_hi_C4p <- subset(med_hi, idents = "C4p")
+  med_hi_C4p <- 0
+  # med_hi_C5 <- subset(med_hi, idents = "C5")
+  med_hi_C5 <- 0
+  # med_hi_C6a <- subset(med_hi, idents = "C6a")
+  med_hi_C6a <- 0
+  # med_hi_C6v <- subset(med_hi, idents = "C6v")
+  med_hi_C6v <- 0
+  
+  # hi_hi_C0a <- subset(hi_hi, idents = "C0a")
+  # hi_hi_C0v <- subset(hi_hi, idents = "C0v")
+  # hi_hi_C1 <- subset(hi_hi, idents = "C1")
+  # hi_hi_C2 <- subset(hi_hi, idents = "C2")
+  # hi_hi_C3 <- subset(hi_hi, idents = "C3")
+  # hi_hi_C4ip <- subset(hi_hi, idents = "C4ip")
+  # hi_hi_C4p <- subset(hi_hi, idents = "C4p")
+  # hi_hi_C5 <- subset(hi_hi, idents = "C5")
+  # hi_hi_C6a <- subset(hi_hi, idents = "C6a")
+  # hi_hi_C6v <- subset(hi_hi, idents = "C6v")
+  
+  lo_lo_h1 <- ncol(lo_lo_C0a)
+  lo_lo_h2 <- ncol(lo_lo_C0v)
+  lo_lo_h3 <- ncol(lo_lo_C1)
+  lo_lo_h4 <- ncol(lo_lo_C2)
+  lo_lo_h5 <- ncol(lo_lo_C3)
+  lo_lo_h6 <- ncol(lo_lo_C4ip)
+  lo_lo_h7 <- ncol(lo_lo_C4p)
+  lo_lo_h8 <- ncol(lo_lo_C5)
+  lo_lo_h9 <- ncol(lo_lo_C6a)
+  lo_lo_h10 <- ncol(lo_lo_C6v)
+  
+  med_lo_h1 <- ncol(med_lo_C0a)
+  med_lo_h2 <- ncol(med_lo_C0v)
+  med_lo_h3 <- ncol(med_lo_C1)
+  med_lo_h4 <- ncol(med_lo_C2)
+  med_lo_h5 <- ncol(med_lo_C3)
+  med_lo_h6 <- ncol(med_lo_C4ip)
+  med_lo_h7 <- ncol(med_lo_C4p)
+  med_lo_h8 <- ncol(med_lo_C5)
+  med_lo_h9 <- ncol(med_lo_C6a)
+  med_lo_h10 <- ncol(med_lo_C6v) 
+  
+  # hi_lo_h1 <- ncol(hi_lo_C0a)
+  # hi_lo_h2 <- ncol(hi_lo_C0v)
+  # hi_lo_h3 <- ncol(hi_lo_C1)
+  # hi_lo_h4 <- ncol(hi_lo_C2)
+  # hi_lo_h5 <- ncol(hi_lo_C3)
+  # hi_lo_h6 <- ncol(hi_lo_C4ip)
+  # hi_lo_h7 <- ncol(hi_lo_C4p)
+  # hi_lo_h8 <- ncol(hi_lo_C5)
+  # hi_lo_h9 <- ncol(hi_lo_C6a)
+  # hi_lo_h10 <- ncol(hi_lo_C6v)
+  
+  lo_med_h1 <- ncol(lo_med_C0a)
+  lo_med_h2 <- ncol(lo_med_C0v)
+  lo_med_h3 <- ncol(lo_med_C1)
+  lo_med_h4 <- ncol(lo_med_C2)
+  lo_med_h5 <- ncol(lo_med_C3)
+  lo_med_h6 <- ncol(lo_med_C4ip)
+  lo_med_h7 <- ncol(lo_med_C4p)
+  lo_med_h8 <- ncol(lo_med_C5)
+  lo_med_h9 <- ncol(lo_med_C6a)
+  lo_med_h10 <- ncol(lo_med_C6v)
+  
+  med_med_h1 <- ncol(med_med_C0a)
+  med_med_h2 <- ncol(med_med_C0v)
+  med_med_h3 <- ncol(med_med_C1)
+  med_med_h4 <- ncol(med_med_C2)
+  med_med_h5 <- ncol(med_med_C3)
+  med_med_h6 <- ncol(med_med_C4ip)
+  med_med_h7 <- ncol(med_med_C4p)
+  med_med_h8 <- ncol(med_med_C5)
+  med_med_h9 <- ncol(med_med_C6a)
+  med_med_h10 <- ncol(med_med_C6v)
+  
+  # hi_med_h1 <- ncol(hi_med_C0a)
+  # hi_med_h2 <- ncol(hi_med_C0v)
+  # hi_med_h3 <- ncol(hi_med_C1)
+  # hi_med_h4 <- ncol(hi_med_C2)
+  # hi_med_h5 <- ncol(hi_med_C3)
+  # hi_med_h6 <- ncol(hi_med_C4ip)
+  # hi_med_h7 <- ncol(hi_med_C4p)
+  # hi_med_h8 <- ncol(hi_med_C5)
+  # hi_med_h9 <- ncol(hi_med_C6a)
+  # hi_med_h10 <- ncol(hi_med_C6v)
+  
+  lo_hi_h1 <- ncol(lo_hi_C0a)
+  lo_hi_h2 <- ncol(lo_hi_C0v)
+  lo_hi_h3 <- ncol(lo_hi_C1)
+  lo_hi_h4 <- ncol(lo_hi_C2)
+  lo_hi_h5 <- ncol(lo_hi_C3)
+  lo_hi_h6 <- ncol(lo_hi_C4ip)
+  lo_hi_h7 <- ncol(lo_hi_C4p)
+  lo_hi_h8 <- ncol(lo_hi_C5)
+  lo_hi_h9 <- ncol(lo_hi_C6a)
+  lo_hi_h10 <- ncol(lo_hi_C6v)
+
+  med_hi_h1 <- ncol(med_hi_C0a)
+  med_hi_h2 <- ncol(med_hi_C0v)
+  med_hi_h3 <- ncol(med_hi_C1)
+  med_hi_h4 <- ncol(med_hi_C2)
+  med_hi_h5 <- ncol(med_hi_C3)
+  med_hi_h6 <- ncol(med_hi_C4ip)
+  med_hi_h7 <- ncol(med_hi_C4p)
+  med_hi_h8 <- ncol(med_hi_C5)
+  med_hi_h9 <- ncol(med_hi_C6a)
+  med_hi_h10 <- ncol(med_hi_C6v)
+  
+  # hi_hi_h1 <- ncol(hi_hi_C0a)
+  # hi_hi_h2 <- ncol(hi_hi_C0v)
+  # hi_hi_h3 <- ncol(hi_hi_C1)
+  # hi_hi_h4 <- ncol(hi_hi_C2)
+  # hi_hi_h5 <- ncol(hi_hi_C3)
+  # hi_hi_h6 <- ncol(hi_hi_C4ip)
+  # hi_hi_h7 <- ncol(hi_hi_C4p)
+  # hi_hi_h8 <- ncol(hi_hi_C5)
+  # hi_hi_h9 <- ncol(hi_hi_C6a)
+  # hi_hi_h10 <- ncol(hi_hi_C6v)
+  
+  ncell_list_per_cluster_Dll4KO <- matrix(c( lo_lo_h1, lo_lo_h2, lo_lo_h3, lo_lo_h4, lo_lo_h5, lo_lo_h6, lo_lo_h7, lo_lo_h8, lo_lo_h9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, med_lo_h2, med_lo_h3, 0, med_lo_h5, med_lo_h6, med_lo_h7, med_lo_h8, med_lo_h9, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  med_med_h1, med_med_h2, med_med_h3, med_med_h4, med_med_h5, med_med_h6, med_med_h7, 0, med_med_h9, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, med_hi_h3, 0, 0, 0, 0, 0, 0, 0, lo_med_h1, lo_med_h2, lo_med_h3, lo_med_h4, lo_med_h5, lo_med_h6, lo_med_h7, lo_med_h8, lo_med_h9, lo_med_h10,  lo_hi_h1, lo_hi_h2, lo_hi_h3, lo_hi_h4, lo_hi_h5, lo_hi_h6, lo_hi_h7, lo_hi_h8, lo_hi_h9, lo_hi_h10), ncol = 9, nrow = 10, 
+  dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                               c("no expr", "MSR1hi-noWNT2", "MSR1lo-noWNT2", "MSR1hi-WNT2lo", "MSR1lo-WNT2lo", "MSR1hi-WNT2hi", "MSR1lo-WNT2hi", "noMSR1-WNT2lo", "noMSR1-WNT2hi")))
+  
+  ncell_list_per_cluster_Dll4KO
+  
+  
+```
+
+```{r subsets per condition: RbpjKOControl}
+
+  lo_lo <- subset(RbpjKO, subset = MSR1 <= 0 & WNT2 <= 0)
+  med_lo <- subset(RbpjKO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 <= 0)
+  hi_lo <- subset(RbpjKO, subset = MSR1 > 2 & WNT2 <= 0)
+  
+  lo_med <- subset(RbpjKO, subset = MSR1 <= 0 & WNT2 > 0 & WNT2 <= 2)
+  med_med <- subset(RbpjKO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 0 & WNT2 <= 2)
+  hi_med <- subset(RbpjKO, subset = MSR1 > 2 & WNT2 > 0 & WNT2 <= 2)
+  
+  lo_hi <- subset(RbpjKO, subset = MSR1 <= 0 & WNT2 > 0)
+  med_hi <- subset(RbpjKO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 2)
+  hi_hi <- subset(RbpjKO, subset = MSR1 > 2 & WNT2 > 2)
+  
+
+  
+```
+
+```{r subsets per cluster: RbpjKO}
+
+  lo_lo_C0a <- subset(lo_lo, idents = "C0a")
+  lo_lo_C0v <- subset(lo_lo, idents = "C0v")
+  lo_lo_C1 <- subset(lo_lo, idents = "C1")
+  lo_lo_C2 <- subset(lo_lo, idents = "C2")
+  lo_lo_C3 <- subset(lo_lo, idents = "C3")
+  lo_lo_C4ip <- subset(lo_lo, idents = "C4ip")
+  lo_lo_C4p <- subset(lo_lo, idents = "C4p")
+  lo_lo_C5 <- subset(lo_lo, idents = "C5")
+  lo_lo_C6a <- subset(lo_lo, idents = "C6a")
+  lo_lo_C6v <- subset(lo_lo, idents = "C6v")
+  
+  med_lo_C0a <- subset(med_lo, idents = "C0a")
+  med_lo_C0v <- subset(med_lo, idents = "C0v")
+  med_lo_C1 <- subset(med_lo, idents = "C1")
+  med_lo_C2 <- subset(med_lo, idents = "C2")
+  med_lo_C3 <- subset(med_lo, idents = "C3")
+  med_lo_C4ip <- subset(med_lo, idents = "C4ip")
+  med_lo_C4p <- subset(med_lo, idents = "C4p")
+  med_lo_C5 <- subset(med_lo, idents = "C5")
+  # med_lo_C6a <- subset(med_lo, idents = "C6a")
+  med_lo_C6a <- 0
+  # med_lo_C6v <- subset(med_lo, idents = "C6v")
+  med_lo_C6v <- 0
+  
+  # hi_lo_C0a <- subset(hi_lo, idents = "C0a")
+  hi_lo_C0a <- 0
+  hi_lo_C0v <- subset(hi_lo, idents = "C0v")
+  hi_lo_C1 <- subset(hi_lo, idents = "C1")
+  hi_lo_C2 <- subset(hi_lo, idents = "C2")
+  # hi_lo_C3 <- subset(hi_lo, idents = "C3")
+  hi_lo_C3 <- 0
+  hi_lo_C4ip <- subset(hi_lo, idents = "C4ip")
+  hi_lo_C4p <- subset(hi_lo, idents = "C4p")
+  hi_lo_C5 <- subset(hi_lo, idents = "C5")
+  # hi_lo_C6a <- subset(hi_lo, idents = "C6a")
+  hi_lo_C6a <- 0
+  # hi_lo_C6v <- subset(hi_lo, idents = "C6v")
+  hi_lo_C6v <- 0
+  
+  lo_med_C0a <- subset(lo_med, idents = "C0a")
+  lo_med_C0v <- subset(lo_med, idents = "C0v")
+  lo_med_C1 <- subset(lo_med, idents = "C1")
+  lo_med_C2 <- subset(lo_med, idents = "C2")
+  lo_med_C3 <- subset(lo_med, idents = "C3")
+  lo_med_C4ip <- subset(lo_med, idents = "C4ip")
+  lo_med_C4p <- subset(lo_med, idents = "C4p")
+  lo_med_C5 <- subset(lo_med, idents = "C5")
+  lo_med_C6a <- subset(lo_med, idents = "C6a")
+  lo_med_C6v <- subset(lo_med, idents = "C6v")
+  
+  med_med_C0a <- subset(med_med, idents = "C0a")
+  med_med_C0v <- subset(med_med, idents = "C0v")
+  med_med_C1 <- subset(med_med, idents = "C1")
+  med_med_C2 <- subset(med_med, idents = "C2")
+  med_med_C3 <- subset(med_med, idents = "C3")
+  med_med_C4ip <- subset(med_med, idents = "C4ip")
+  med_med_C4p <- subset(med_med, idents = "C4p")
+  med_med_C5 <- subset(med_med, idents = "C5")
+  med_med_C6a <- subset(med_med, idents = "C6a")
+  # med_med_C6v <- subset(med_med, idents = "C6v")
+  med_med_C6v <- 0
+  
+  hi_med_C0a <- subset(hi_med, idents = "C0a")
+  hi_med_C0v <- subset(hi_med, idents = "C0v")
+  hi_med_C1 <- subset(hi_med, idents = "C1")
+  hi_med_C2 <- subset(hi_med, idents = "C2")
+  # hi_med_C3 <- subset(hi_med, idents = "C3")
+  hi_med_C3 <- 0
+  hi_med_C4ip <- subset(hi_med, idents = "C4ip")
+  hi_med_C4p <- subset(hi_med, idents = "C4p")
+  hi_med_C5 <- subset(hi_med, idents = "C5")
+  # hi_med_C6a <- subset(hi_med, idents = "C6a")
+  hi_med_C6a <- 0
+  # hi_med_C6v <- subset(hi_med, idents = "C6v")
+  hi_med_C6v <- 0
+  
+  lo_hi_C0a <- subset(lo_hi, idents = "C0a")
+  lo_hi_C0v <- subset(lo_hi, idents = "C0v")
+  lo_hi_C1 <- subset(lo_hi, idents = "C1")
+  lo_hi_C2 <- subset(lo_hi, idents = "C2")
+  lo_hi_C3 <- subset(lo_hi, idents = "C3")
+  lo_hi_C4ip <- subset(lo_hi, idents = "C4ip")
+  lo_hi_C4p <- subset(lo_hi, idents = "C4p")
+  lo_hi_C5 <- subset(lo_hi, idents = "C5")
+  lo_hi_C6a <- subset(lo_hi, idents = "C6a")
+  lo_hi_C6v <- subset(lo_hi, idents = "C6v")
+  
+  med_hi_C0a <- subset(med_hi, idents = "C0a")
+  med_hi_C0v <- subset(med_hi, idents = "C0v")
+  med_hi_C1 <- subset(med_hi, idents = "C1")
+  med_hi_C2 <- subset(med_hi, idents = "C2")
+  # med_hi_C3 <- subset(med_hi, idents = "C3")
+  med_hi_C3 <- 0
+  med_hi_C4ip <- subset(med_hi, idents = "C4ip")
+  # med_hi_C4p <- subset(med_hi, idents = "C4p")
+  med_hi_C4p <- 0
+  med_hi_C5 <- subset(med_hi, idents = "C5")
+  # med_hi_C6a <- subset(med_hi, idents = "C6a")
+  med_hi_C6a <- 0
+  # med_hi_C6v <- subset(med_hi, idents = "C6v")
+  med_hi_C6v <- 0
+  
+  # hi_hi_C0a <- subset(hi_hi, idents = "C0a")
+  hi_hi_C0a <- 0
+  # hi_hi_C0v <- subset(hi_hi, idents = "C0v")
+  hi_hi_C0v <- 0
+  # hi_hi_C1 <- subset(hi_hi, idents = "C1")
+  hi_hi_C1 <- 0
+  hi_hi_C2 <- subset(hi_hi, idents = "C2")
+  # hi_hi_C3 <- subset(hi_hi, idents = "C3")
+  hi_hi_C3 <- 0
+  # hi_hi_C4ip <- subset(hi_hi, idents = "C4ip")
+  hi_hi_C4ip <- 0
+  # hi_hi_C4p <- subset(hi_hi, idents = "C4p")
+  hi_hi_C4p <- 0
+  # hi_hi_C5 <- subset(hi_hi, idents = "C5")
+  hi_hi_C5 <- 0
+  # hi_hi_C6a <- subset(hi_hi, idents = "C6a")
+  hi_hi_C6a <- 0
+  # hi_hi_C6v <- subset(hi_hi, idents = "C6v")
+  hi_hi_C6v <- 0
+  
+  lo_lo_h1 <- ncol(lo_lo_C0a)
+  lo_lo_h2 <- ncol(lo_lo_C0v)
+  lo_lo_h3 <- ncol(lo_lo_C1)
+  lo_lo_h4 <- ncol(lo_lo_C2)
+  lo_lo_h5 <- ncol(lo_lo_C3)
+  lo_lo_h6 <- ncol(lo_lo_C4ip)
+  lo_lo_h7 <- ncol(lo_lo_C4p)
+  lo_lo_h8 <- ncol(lo_lo_C5)
+  lo_lo_h9 <- ncol(lo_lo_C6a)
+  lo_lo_h10 <- ncol(lo_lo_C6v)
+  
+  med_lo_h1 <- ncol(med_lo_C0a)
+  med_lo_h2 <- ncol(med_lo_C0v)
+  med_lo_h3 <- ncol(med_lo_C1)
+  med_lo_h4 <- ncol(med_lo_C2)
+  med_lo_h5 <- ncol(med_lo_C3)
+  med_lo_h6 <- ncol(med_lo_C4ip)
+  med_lo_h7 <- ncol(med_lo_C4p)
+  med_lo_h8 <- ncol(med_lo_C5)
+  med_lo_h9 <- ncol(med_lo_C6a)
+  med_lo_h10 <- ncol(med_lo_C6v) 
+  
+  hi_lo_h1 <- ncol(hi_lo_C0a)
+  hi_lo_h2 <- ncol(hi_lo_C0v)
+  hi_lo_h3 <- ncol(hi_lo_C1)
+  hi_lo_h4 <- ncol(hi_lo_C2)
+  hi_lo_h5 <- ncol(hi_lo_C3)
+  hi_lo_h6 <- ncol(hi_lo_C4ip)
+  hi_lo_h7 <- ncol(hi_lo_C4p)
+  hi_lo_h8 <- ncol(hi_lo_C5)
+  hi_lo_h9 <- ncol(hi_lo_C6a)
+  hi_lo_h10 <- ncol(hi_lo_C6v)
+  
+  lo_med_h1 <- ncol(lo_med_C0a)
+  lo_med_h2 <- ncol(lo_med_C0v)
+  lo_med_h3 <- ncol(lo_med_C1)
+  lo_med_h4 <- ncol(lo_med_C2)
+  lo_med_h5 <- ncol(lo_med_C3)
+  lo_med_h6 <- ncol(lo_med_C4ip)
+  lo_med_h7 <- ncol(lo_med_C4p)
+  lo_med_h8 <- ncol(lo_med_C5)
+  lo_med_h9 <- ncol(lo_med_C6a)
+  lo_med_h10 <- ncol(lo_med_C6v)
+  
+  med_med_h1 <- ncol(med_med_C0a)
+  med_med_h2 <- ncol(med_med_C0v)
+  med_med_h3 <- ncol(med_med_C1)
+  med_med_h4 <- ncol(med_med_C2)
+  med_med_h5 <- ncol(med_med_C3)
+  med_med_h6 <- ncol(med_med_C4ip)
+  med_med_h7 <- ncol(med_med_C4p)
+  med_med_h8 <- ncol(med_med_C5)
+  med_med_h9 <- ncol(med_med_C6a)
+  med_med_h10 <- ncol(med_med_C6v)
+  
+  hi_med_h1 <- ncol(hi_med_C0a)
+  hi_med_h2 <- ncol(hi_med_C0v)
+  hi_med_h3 <- ncol(hi_med_C1)
+  hi_med_h4 <- ncol(hi_med_C2)
+  hi_med_h5 <- ncol(hi_med_C3)
+  hi_med_h6 <- ncol(hi_med_C4ip)
+  hi_med_h7 <- ncol(hi_med_C4p)
+  hi_med_h8 <- ncol(hi_med_C5)
+  hi_med_h9 <- ncol(hi_med_C6a)
+  hi_med_h10 <- ncol(hi_med_C6v)
+  
+  lo_hi_h1 <- ncol(lo_hi_C0a)
+  lo_hi_h2 <- ncol(lo_hi_C0v)
+  lo_hi_h3 <- ncol(lo_hi_C1)
+  lo_hi_h4 <- ncol(lo_hi_C2)
+  lo_hi_h5 <- ncol(lo_hi_C3)
+  lo_hi_h6 <- ncol(lo_hi_C4ip)
+  lo_hi_h7 <- ncol(lo_hi_C4p)
+  lo_hi_h8 <- ncol(lo_hi_C5)
+  lo_hi_h9 <- ncol(lo_hi_C6a)
+  lo_hi_h10 <- ncol(lo_hi_C6v)
+
+  med_hi_h1 <- ncol(med_hi_C0a)
+  med_hi_h2 <- ncol(med_hi_C0v)
+  med_hi_h3 <- ncol(med_hi_C1)
+  med_hi_h4 <- ncol(med_hi_C2)
+  med_hi_h5 <- ncol(med_hi_C3)
+  med_hi_h6 <- ncol(med_hi_C4ip)
+  med_hi_h7 <- ncol(med_hi_C4p)
+  med_hi_h8 <- ncol(med_hi_C5)
+  med_hi_h9 <- ncol(med_hi_C6a)
+  med_hi_h10 <- ncol(med_hi_C6v)
+  
+  hi_hi_h1 <- ncol(hi_hi_C0a)
+  hi_hi_h2 <- ncol(hi_hi_C0v)
+  hi_hi_h3 <- ncol(hi_hi_C1)
+  hi_hi_h4 <- ncol(hi_hi_C2)
+  hi_hi_h5 <- ncol(hi_hi_C3)
+  hi_hi_h6 <- ncol(hi_hi_C4ip)
+  hi_hi_h7 <- ncol(hi_hi_C4p)
+  hi_hi_h8 <- ncol(hi_hi_C5)
+  hi_hi_h9 <- ncol(hi_hi_C6a)
+  hi_hi_h10 <- ncol(hi_hi_C6v)
+  
+  ncell_list_per_cluster_RbpjKO <- matrix(c( lo_lo_h1, lo_lo_h2, lo_lo_h3, lo_lo_h4, lo_lo_h5, lo_lo_h6, lo_lo_h7, lo_lo_h8, lo_lo_h9, lo_lo_h10,  0, hi_lo_h2, hi_lo_h3, hi_lo_h4, 0, hi_lo_h6, hi_lo_h7, hi_lo_h8, 0, 0,  med_lo_h1, med_lo_h2, med_lo_h3, med_lo_h4, med_lo_h5, med_lo_h6, med_lo_h7, med_lo_h8, 0, 0,  hi_med_h1, hi_med_h2, hi_med_h3, hi_med_h4, 0, hi_med_h6, hi_med_h7, hi_med_h8, 0, 0,  med_med_h1, med_med_h2, med_med_h3, med_med_h4, med_med_h5, med_med_h6, med_med_h7, med_med_h8, med_med_h9, 0,  0, 0, 0, hi_hi_h4, 0, 0, 0, 0, 0, 0,  med_hi_h1, med_hi_h2, med_hi_h3, med_hi_h4, 0, med_hi_h6, 0, med_hi_h8, 0, 0, lo_med_h1, lo_med_h2, lo_med_h3, lo_med_h4, lo_med_h5, lo_med_h6, lo_med_h7, lo_med_h8, lo_med_h9, lo_med_h10,  lo_hi_h1, lo_hi_h2, lo_hi_h3, lo_hi_h4, lo_hi_h5, lo_hi_h6, lo_hi_h7, lo_hi_h8, lo_hi_h9, lo_hi_h10), ncol = 9, nrow = 10, 
+  dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                               c("no expr", "MSR1hi-noWNT2", "MSR1lo-noWNT2", "MSR1hi-WNT2lo", "MSR1lo-WNT2lo", "MSR1hi-WNT2hi", "MSR1lo-WNT2hi", "noMSR1-WNT2lo", "noMSR1-WNT2hi")))
+  
+  ncell_list_per_cluster_RbpjKO 
+  
+```
+
+```{r subsets per condition: Notch1KO}
+
+  lo_lo <- subset(Notch1KO, subset = MSR1 <= 0 & WNT2 <= 0)
+  med_lo <- subset(Notch1KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 <= 0)
+  hi_lo <- subset(Notch1KO, subset = MSR1 > 2 & WNT2 <= 0)
+  
+  lo_med <- subset(Notch1KO, subset = MSR1 <= 0 & WNT2 > 0 & WNT2 <= 2)
+  med_med <- subset(Notch1KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 0 & WNT2 <= 2)
+  hi_med <- subset(Notch1KO, subset = MSR1 > 2 & WNT2 > 0 & WNT2 <= 2)
+  
+  lo_hi <- subset(Notch1KO, subset = MSR1 <= 0 & WNT2 > 0)
+  med_hi <- subset(Notch1KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 2)
+  hi_hi <- subset(Notch1KO, subset = MSR1 > 2 & WNT2 > 2)
+  
+
+  
+```
+
+```{r subsets per cluster: Notch1KO}
+
+  lo_lo_C0a <- subset(lo_lo, idents = "C0a")
+  lo_lo_C0v <- subset(lo_lo, idents = "C0v")
+  lo_lo_C1 <- subset(lo_lo, idents = "C1")
+  lo_lo_C2 <- subset(lo_lo, idents = "C2")
+  lo_lo_C3 <- subset(lo_lo, idents = "C3")
+  lo_lo_C4ip <- subset(lo_lo, idents = "C4ip")
+  lo_lo_C4p <- subset(lo_lo, idents = "C4p")
+  lo_lo_C5 <- subset(lo_lo, idents = "C5")
+  lo_lo_C6a <- subset(lo_lo, idents = "C6a")
+  lo_lo_C6v <- subset(lo_lo, idents = "C6v")
+  
+  med_lo_C0a <- subset(med_lo, idents = "C0a")
+  med_lo_C0v <- subset(med_lo, idents = "C0v")
+  med_lo_C1 <- subset(med_lo, idents = "C1")
+  med_lo_C2 <- subset(med_lo, idents = "C2")
+  # med_lo_C3 <- subset(med_lo, idents = "C3")
+  med_lo_C3 <- 0
+  med_lo_C4ip <- subset(med_lo, idents = "C4ip")
+  med_lo_C4p <- subset(med_lo, idents = "C4p")
+  med_lo_C5 <- subset(med_lo, idents = "C5")
+  med_lo_C6a <- subset(med_lo, idents = "C6a")
+  # med_lo_C6v <- subset(med_lo, idents = "C6v")
+  med_lo_C6v <- 0
+  
+  hi_lo_C0a <- subset(hi_lo, idents = "C0a")
+  hi_lo_C0v <- subset(hi_lo, idents = "C0v")
+  hi_lo_C1 <- subset(hi_lo, idents = "C1")
+  hi_lo_C2 <- subset(hi_lo, idents = "C2")
+  # hi_lo_C3 <- subset(hi_lo, idents = "C3")
+  hi_lo_C3 <- 0
+  # hi_lo_C4ip <- subset(hi_lo, idents = "C4ip")
+  hi_lo_C4ip <- 0
+  # hi_lo_C4p <- subset(hi_lo, idents = "C4p")
+  hi_lo_C4p <- 0
+  # hi_lo_C5 <- subset(hi_lo, idents = "C5")
+  hi_lo_C5 <- 0
+  hi_lo_C6a <- subset(hi_lo, idents = "C6a")
+  # hi_lo_C6v <- subset(hi_lo, idents = "C6v")
+  hi_lo_C6v <- 0
+  
+  lo_med_C0a <- subset(lo_med, idents = "C0a")
+  lo_med_C0v <- subset(lo_med, idents = "C0v")
+  lo_med_C1 <- subset(lo_med, idents = "C1")
+  lo_med_C2 <- subset(lo_med, idents = "C2")
+  lo_med_C3 <- subset(lo_med, idents = "C3")
+  lo_med_C4ip <- subset(lo_med, idents = "C4ip")
+  lo_med_C4p <- subset(lo_med, idents = "C4p")
+  lo_med_C5 <- subset(lo_med, idents = "C5")
+  lo_med_C6a <- subset(lo_med, idents = "C6a")
+  lo_med_C6v <- subset(lo_med, idents = "C6v")
+  
+  med_med_C0a <- subset(med_med, idents = "C0a")
+  med_med_C0v <- subset(med_med, idents = "C0v")
+  med_med_C1 <- subset(med_med, idents = "C1")
+  med_med_C2 <- subset(med_med, idents = "C2")
+  # med_med_C3 <- subset(med_med, idents = "C3")
+  med_med_C3 <- 0
+  med_med_C4ip <- subset(med_med, idents = "C4ip")
+  med_med_C4p <- subset(med_med, idents = "C4p")
+  # med_med_C5 <- subset(med_med, idents = "C5")
+  med_med_C5 <- 0
+  med_med_C6a <- subset(med_med, idents = "C6a")
+  med_med_C6v <- subset(med_med, idents = "C6v")
+  
+  hi_med_C0a <- subset(hi_med, idents = "C0a")
+  hi_med_C0v <- subset(hi_med, idents = "C0v")
+  # hi_med_C1 <- subset(hi_med, idents = "C1")
+  hi_med_C1 <- 0
+  hi_med_C2 <- subset(hi_med, idents = "C2")
+  # hi_med_C3 <- subset(hi_med, idents = "C3")
+  hi_med_C3 <- 0
+  # hi_med_C4ip <- subset(hi_med, idents = "C4ip")
+  hi_med_C4ip <- 0
+  hi_med_C4p <- subset(hi_med, idents = "C4p")
+  # hi_med_C5 <- subset(hi_med, idents = "C5")
+  hi_med_C5 <- 0
+  # hi_med_C6a <- subset(hi_med, idents = "C6a")
+  hi_med_C6a <- 0
+  # hi_med_C6v <- subset(hi_med, idents = "C6v")
+  hi_med_C6v <- 0
+  
+  lo_hi_C0a <- subset(lo_hi, idents = "C0a")
+  lo_hi_C0v <- subset(lo_hi, idents = "C0v")
+  lo_hi_C1 <- subset(lo_hi, idents = "C1")
+  lo_hi_C2 <- subset(lo_hi, idents = "C2")
+  lo_hi_C3 <- subset(lo_hi, idents = "C3")
+  lo_hi_C4ip <- subset(lo_hi, idents = "C4ip")
+  lo_hi_C4p <- subset(lo_hi, idents = "C4p")
+  lo_hi_C5 <- subset(lo_hi, idents = "C5")
+  lo_hi_C6a <- subset(lo_hi, idents = "C6a")
+  lo_hi_C6v <- subset(lo_hi, idents = "C6v")
+  
+  med_hi_C0a <- subset(med_hi, idents = "C0a")
+  med_hi_C0v <- subset(med_hi, idents = "C0v")
+  med_hi_C1 <- subset(med_hi, idents = "C1")
+  med_hi_C2 <- subset(med_hi, idents = "C2")
+  # med_hi_C3 <- subset(med_hi, idents = "C3")
+  med_hi_C3 <- 0
+  med_hi_C4ip <- subset(med_hi, idents = "C4ip")
+  # med_hi_C4p <- subset(med_hi, idents = "C4p")
+  med_hi_C4p <- 0
+  # med_hi_C5 <- subset(med_hi, idents = "C5")
+  med_hi_C5 <- 0
+  # med_hi_C6a <- subset(med_hi, idents = "C6a")
+  med_hi_C6a <- 0
+  med_hi_C6v <- subset(med_hi, idents = "C6v")
+  
+  hi_hi_C0a <- subset(hi_hi, idents = "C0a")
+  hi_hi_C0v <- subset(hi_hi, idents = "C0v")
+  # hi_hi_C1 <- subset(hi_hi, idents = "C1")
+  hi_hi_C1 <- 0
+  hi_hi_C2 <- subset(hi_hi, idents = "C2")
+  # hi_hi_C3 <- subset(hi_hi, idents = "C3")
+  hi_hi_C3 <- 0
+  # hi_hi_C4ip <- subset(hi_hi, idents = "C4ip")
+  hi_hi_C4ip <- 0
+  # hi_hi_C4p <- subset(hi_hi, idents = "C4p")
+  hi_hi_C4p <- 0
+  # hi_hi_C5 <- subset(hi_hi, idents = "C5")
+  hi_hi_C5 <- 0
+  # hi_hi_C6a <- subset(hi_hi, idents = "C6a")
+  hi_hi_C6a <- 0
+  # hi_hi_C6v <- subset(hi_hi, idents = "C6v")
+  hi_hi_C6v <- 0
+  
+  lo_lo_h1 <- ncol(lo_lo_C0a)
+  lo_lo_h2 <- ncol(lo_lo_C0v)
+  lo_lo_h3 <- ncol(lo_lo_C1)
+  lo_lo_h4 <- ncol(lo_lo_C2)
+  lo_lo_h5 <- ncol(lo_lo_C3)
+  lo_lo_h6 <- ncol(lo_lo_C4ip)
+  lo_lo_h7 <- ncol(lo_lo_C4p)
+  lo_lo_h8 <- ncol(lo_lo_C5)
+  lo_lo_h9 <- ncol(lo_lo_C6a)
+  lo_lo_h10 <- ncol(lo_lo_C6v)
+  
+  med_lo_h1 <- ncol(med_lo_C0a)
+  med_lo_h2 <- ncol(med_lo_C0v)
+  med_lo_h3 <- ncol(med_lo_C1)
+  med_lo_h4 <- ncol(med_lo_C2)
+  med_lo_h5 <- ncol(med_lo_C3)
+  med_lo_h6 <- ncol(med_lo_C4ip)
+  med_lo_h7 <- ncol(med_lo_C4p)
+  med_lo_h8 <- ncol(med_lo_C5)
+  med_lo_h9 <- ncol(med_lo_C6a)
+  med_lo_h10 <- ncol(med_lo_C6v) 
+  
+  hi_lo_h1 <- ncol(hi_lo_C0a)
+  hi_lo_h2 <- ncol(hi_lo_C0v)
+  hi_lo_h3 <- ncol(hi_lo_C1)
+  hi_lo_h4 <- ncol(hi_lo_C2)
+  hi_lo_h5 <- ncol(hi_lo_C3)
+  hi_lo_h6 <- ncol(hi_lo_C4ip)
+  hi_lo_h7 <- ncol(hi_lo_C4p)
+  hi_lo_h8 <- ncol(hi_lo_C5)
+  hi_lo_h9 <- ncol(hi_lo_C6a)
+  hi_lo_h10 <- ncol(hi_lo_C6v)
+  
+  lo_med_h1 <- ncol(lo_med_C0a)
+  lo_med_h2 <- ncol(lo_med_C0v)
+  lo_med_h3 <- ncol(lo_med_C1)
+  lo_med_h4 <- ncol(lo_med_C2)
+  lo_med_h5 <- ncol(lo_med_C3)
+  lo_med_h6 <- ncol(lo_med_C4ip)
+  lo_med_h7 <- ncol(lo_med_C4p)
+  lo_med_h8 <- ncol(lo_med_C5)
+  lo_med_h9 <- ncol(lo_med_C6a)
+  lo_med_h10 <- ncol(lo_med_C6v)
+  
+  med_med_h1 <- ncol(med_med_C0a)
+  med_med_h2 <- ncol(med_med_C0v)
+  med_med_h3 <- ncol(med_med_C1)
+  med_med_h4 <- ncol(med_med_C2)
+  med_med_h5 <- ncol(med_med_C3)
+  med_med_h6 <- ncol(med_med_C4ip)
+  med_med_h7 <- ncol(med_med_C4p)
+  med_med_h8 <- ncol(med_med_C5)
+  med_med_h9 <- ncol(med_med_C6a)
+  med_med_h10 <- ncol(med_med_C6v)
+  
+  hi_med_h1 <- ncol(hi_med_C0a)
+  hi_med_h2 <- ncol(hi_med_C0v)
+  hi_med_h3 <- ncol(hi_med_C1)
+  hi_med_h4 <- ncol(hi_med_C2)
+  hi_med_h5 <- ncol(hi_med_C3)
+  hi_med_h6 <- ncol(hi_med_C4ip)
+  hi_med_h7 <- ncol(hi_med_C4p)
+  hi_med_h8 <- ncol(hi_med_C5)
+  hi_med_h9 <- ncol(hi_med_C6a)
+  hi_med_h10 <- ncol(hi_med_C6v)
+  
+  lo_hi_h1 <- ncol(lo_hi_C0a)
+  lo_hi_h2 <- ncol(lo_hi_C0v)
+  lo_hi_h3 <- ncol(lo_hi_C1)
+  lo_hi_h4 <- ncol(lo_hi_C2)
+  lo_hi_h5 <- ncol(lo_hi_C3)
+  lo_hi_h6 <- ncol(lo_hi_C4ip)
+  lo_hi_h7 <- ncol(lo_hi_C4p)
+  lo_hi_h8 <- ncol(lo_hi_C5)
+  lo_hi_h9 <- ncol(lo_hi_C6a)
+  lo_hi_h10 <- ncol(lo_hi_C6v)
+
+  med_hi_h1 <- ncol(med_hi_C0a)
+  med_hi_h2 <- ncol(med_hi_C0v)
+  med_hi_h3 <- ncol(med_hi_C1)
+  med_hi_h4 <- ncol(med_hi_C2)
+  med_hi_h5 <- ncol(med_hi_C3)
+  med_hi_h6 <- ncol(med_hi_C4ip)
+  med_hi_h7 <- ncol(med_hi_C4p)
+  med_hi_h8 <- ncol(med_hi_C5)
+  med_hi_h9 <- ncol(med_hi_C6a)
+  med_hi_h10 <- ncol(med_hi_C6v)
+  
+  hi_hi_h1 <- ncol(hi_hi_C0a)
+  hi_hi_h2 <- ncol(hi_hi_C0v)
+  hi_hi_h3 <- ncol(hi_hi_C1)
+  hi_hi_h4 <- ncol(hi_hi_C2)
+  hi_hi_h5 <- ncol(hi_hi_C3)
+  hi_hi_h6 <- ncol(hi_hi_C4ip)
+  hi_hi_h7 <- ncol(hi_hi_C4p)
+  hi_hi_h8 <- ncol(hi_hi_C5)
+  hi_hi_h9 <- ncol(hi_hi_C6a)
+  hi_hi_h10 <- ncol(hi_hi_C6v)
+  
+  ncell_list_per_cluster_Notch1KO <- matrix(c( lo_lo_h1, lo_lo_h2, lo_lo_h3, lo_lo_h4, lo_lo_h5, lo_lo_h6, lo_lo_h7, lo_lo_h8, lo_lo_h9, lo_lo_h10,  hi_lo_h1, hi_lo_h2, hi_lo_h3, hi_lo_h4, 0, 0, 0, 0, hi_lo_h9, 0,  med_lo_h1, med_lo_h2, med_lo_h3, med_lo_h4, 0, med_lo_h6, med_lo_h7, med_lo_h8, med_lo_h9, 0,  hi_med_h1, hi_med_h2, 0, hi_med_h4, 0, 0, hi_med_h7, 0, 0, 0,  med_med_h1, med_med_h2, med_med_h3, med_med_h4, 0, med_med_h6, med_med_h7, 0, med_med_h9, med_med_h10,  hi_hi_h1, hi_hi_h2, 0, hi_hi_h4, 0, 0, 0, 0, 0, 0,  med_hi_h1, med_hi_h2, med_hi_h3, med_hi_h4, 0, med_hi_h6, 0, 0, 0, med_hi_h10, lo_med_h1, lo_med_h2, lo_med_h3, lo_med_h4, lo_med_h5, lo_med_h6, lo_med_h7, lo_med_h8, lo_med_h9, lo_med_h10,  lo_hi_h1, lo_hi_h2, lo_hi_h3, lo_hi_h4, lo_hi_h5, lo_hi_h6, lo_hi_h7, lo_hi_h8, lo_hi_h9, lo_hi_h10), ncol = 9, nrow = 10, 
+  dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                               c("no expr", "MSR1hi-noWNT2", "MSR1lo-noWNT2", "MSR1hi-WNT2lo", "MSR1lo-WNT2lo", "MSR1hi-WNT2hi", "MSR1lo-WNT2hi", "noMSR1-WNT2lo", "noMSR1-WNT2hi")))
+  
+  ncell_list_per_cluster_Notch1KO
+  
+```
+
+```{r plotting per expression level: noMSR1-noWNT2}
+
+                                
+ncell_list_noMSR1_noWNT2 <- matrix(c("Control" = ncell_list_per_cluster_Control[1:10, 1], "Dll4KO" = ncell_list_per_cluster_Dll4KO[1:10, 1], "RbpjKO" = 
+                                  ncell_list_per_cluster_RbpjKO[1:10, 1], "Notch1KO" = ncell_list_per_cluster_Notch1KO[1:10, 1]), nrow = 10, ncol = 4,
+                         dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                         c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+ncell_list_noMSR1_noWNT2
+
+p1 <- barplot(ncell_list_noMSR1_noWNT2, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "noMSR1-noWNT2 per cluster")
+
+```
+
+```{r plotting per expression level: MSR1hi-noWNT2}
+
+                                
+ncell_list_MSR1hi_noWNT2 <- matrix(c("Control" = ncell_list_per_cluster_Control[1:10, 2], "Dll4KO" = ncell_list_per_cluster_Dll4KO[1:10, 2], "RbpjKO" = 
+                                  ncell_list_per_cluster_RbpjKO[1:10, 2], "Notch1KO" = ncell_list_per_cluster_Notch1KO[1:10, 2]), nrow = 10, ncol = 4,
+                         dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                         c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+ncell_list_MSR1hi_noWNT2
+
+p2 <- barplot(ncell_list_MSR1hi_noWNT2, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1hi-noWNT2 per cluster")
+
+
+```
+
+```{r plotting per expression level: MSR1lo-noWNT2}
+
+                                
+ncell_list_MSR1lo_noWNT2 <- matrix(c("Control" = ncell_list_per_cluster_Control[1:10, 3], "Dll4KO" = ncell_list_per_cluster_Dll4KO[1:10, 3], "RbpjKO" = 
+                                  ncell_list_per_cluster_RbpjKO[1:10, 3], "Notch1KO" = ncell_list_per_cluster_Notch1KO[1:10, 3]), nrow = 10, ncol = 4,
+                         dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                         c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+ncell_list_MSR1lo_noWNT2
+
+p3 <- barplot(ncell_list_MSR1lo_noWNT2, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1lo-noWNT2 per cluster")
+
+```
+
+```{r plotting per expression level: MSR1hi-WNT2lo}
+
+                                
+ncell_list_MSR1hi_WNT2lo <- matrix(c("Control" = ncell_list_per_cluster_Control[1:10, 4], "Dll4KO" = ncell_list_per_cluster_Dll4KO[1:10, 4], "RbpjKO" = 
+                                  ncell_list_per_cluster_RbpjKO[1:10, 4], "Notch1KO" = ncell_list_per_cluster_Notch1KO[1:10, 4]), nrow = 10, ncol = 4,
+                         dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                         c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+ncell_list_MSR1hi_WNT2lo
+
+p4 <- barplot(ncell_list_MSR1hi_WNT2lo, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1lo-noWNT2 per cluster")
+
+```
+
+```{r plotting per expression level: MSR1lo-WNT2lo}
+
+                                
+ncell_list_MSR1lo_WNT2lo <- matrix(c("Control" = ncell_list_per_cluster_Control[1:10, 5], "Dll4KO" = ncell_list_per_cluster_Dll4KO[1:10, 5], "RbpjKO" = 
+                                  ncell_list_per_cluster_RbpjKO[1:10, 5], "Notch1KO" = ncell_list_per_cluster_Notch1KO[1:10, 5]), nrow = 10, ncol = 4,
+                         dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                         c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+ncell_list_MSR1lo_WNT2lo
+
+p5 <- barplot(ncell_list_MSR1lo_WNT2lo, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1lo-WNT2lo per cluster")
+
+```
+
+```{r plotting per expression level: MSR1hi-WNT2hi}
+
+                                
+ncell_list_MSR1hi_WNT2hi <- matrix(c("Control" = ncell_list_per_cluster_Control[1:10, 6], "Dll4KO" = ncell_list_per_cluster_Dll4KO[1:10, 6], "RbpjKO" = 
+                                  ncell_list_per_cluster_RbpjKO[1:10, 6], "Notch1KO" = ncell_list_per_cluster_Notch1KO[1:10, 6]), nrow = 10, ncol = 4,
+                         dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                         c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+ncell_list_MSR1hi_WNT2hi
+
+p6 <- barplot(ncell_list_MSR1hi_WNT2hi, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1hi-WNT2hi per cluster")
+
+```
+
+```{r plotting per expression level: MSR1lo-WNT2hi}
+
+                                
+ncell_list_MSR1lo_WNT2hi <- matrix(c("Control" = ncell_list_per_cluster_Control[1:10, 7], "Dll4KO" = ncell_list_per_cluster_Dll4KO[1:10, 7], "RbpjKO" = 
+                                  ncell_list_per_cluster_RbpjKO[1:10, 7], "Notch1KO" = ncell_list_per_cluster_Notch1KO[1:10, 7]), nrow = 10, ncol = 4,
+                         dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                         c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+ncell_list_MSR1lo_WNT2hi
+
+p7 <- barplot(ncell_list_MSR1lo_WNT2hi, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1lo-WNT2hi per cluster")
+
+```
+```{r plotting per expression level: noMSR1-WNT2lo}
+
+                                
+ncell_list_noMSR1_WNT2lo <- matrix(c("Control" = ncell_list_per_cluster_Control[1:10, 8], "Dll4KO" = ncell_list_per_cluster_Dll4KO[1:10, 8], "RbpjKO" = 
+                                  ncell_list_per_cluster_RbpjKO[1:10, 8], "Notch1KO" = ncell_list_per_cluster_Notch1KO[1:10, 8]), nrow = 10, ncol = 4,
+                         dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                         c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+ncell_list_noMSR1_WNT2lo
+
+p8 <- barplot(ncell_list_noMSR1_WNT2lo, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "noMSR1-WNT2lo per cluster")
+
+```
+
+
+
+```{r plotting per expression level: noMSR1-WNT2hi}
+
+                                
+ncell_list_noMSR1_WNT2hi <- matrix(c("Control" = ncell_list_per_cluster_Control[1:10, 9], "Dll4KO" = ncell_list_per_cluster_Dll4KO[1:10, 9], "RbpjKO" = 
+                                  ncell_list_per_cluster_RbpjKO[1:10, 9], "Notch1KO" = ncell_list_per_cluster_Notch1KO[1:10, 9]), nrow = 10, ncol = 4,
+                         dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                         c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+ncell_list_noMSR1_WNT2hi
+
+p9 <- barplot(ncell_list_noMSR1_WNT2hi, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "noMSR1-WNT2hi per cluster")
+
+
+```
+
+```{r plotting per expression level: concatenate barplots}
+
+p1 <- barplot(ncell_list_noMSR1_noWNT2, xlim = c(0.3, 4.6), col = my_palette, ylab = "Cell Count", main = "noMSR1-noWNT2 per cluster")
+
+p2 <- barplot(ncell_list_MSR1hi_noWNT2, xlim = c(0.3, 4.6), col = my_palette, main = "MSR1hi-noWNT2 per cluster")
+
+p3 <- barplot(ncell_list_MSR1lo_noWNT2, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1lo-noWNT2 per cluster")
+
+p4 <- barplot(ncell_list_MSR1hi_WNT2lo, xlim = c(0.3, 4.6), col = my_palette, ylab = "Cell Count", main = "MSR1hi-WNT2lo per cluster")
+
+p5 <- barplot(ncell_list_MSR1lo_WNT2lo, xlim = c(0.3, 4.6), col = my_palette, main = "MSR1lo-WNT2lo per cluster")
+
+p6 <- barplot(ncell_list_MSR1hi_WNT2hi, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1hi-WNT2hi per cluster")
+
+p7 <- barplot(ncell_list_MSR1lo_WNT2hi, xlim = c(0.3, 4.6), col = my_palette, ylab = "Cell Count", xlab = "Condition", main = "MSR1lo-WNT2hi per cluster")
+
+p8 <- barplot(ncell_list_noMSR1_WNT2lo, xlim = c(0.3, 4.6), col = my_palette, xlab = "Condition", main = "noMSR1-WNT2lo per cluster")
+
+p9 <- barplot(ncell_list_noMSR1_WNT2hi, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "noMSR1-WNT2hi per cluster")
+
+
+```
+
+
+```{r data normalization}
+
+cells_per_cluster_per_condition <- matrix(c(colSums(ncell_list_noMSR1_noWNT2),colSums(ncell_list_MSR1hi_noWNT2),colSums(ncell_list_MSR1lo_noWNT2),colSums(ncell_list_MSR1hi_WNT2lo),colSums(ncell_list_MSR1lo_WNT2lo),colSums(ncell_list_MSR1hi_WNT2hi),colSums(ncell_list_MSR1lo_WNT2hi),colSums(ncell_list_noMSR1_WNT2lo), colSums(ncell_list_noMSR1_WNT2hi)))
+
+cells_per_cluster_per_condition
+
+ncell_list_noMSR1_noWNT2_norm <- matrix(c(100*ncell_list_noMSR1_noWNT2[1:10]/cells_per_cluster_per_condition[1],
+                                          100*ncell_list_noMSR1_noWNT2[11:20]/cells_per_cluster_per_condition[2],
+                                          100*ncell_list_noMSR1_noWNT2[21:30]/cells_per_cluster_per_condition[3],
+                                          100*ncell_list_noMSR1_noWNT2[31:40]/cells_per_cluster_per_condition[4]), ncol = 4, 
+                                        dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control=155", "Dll4KO=429", "RbpjKO=201", "Notch1KO=163")))
+
+ncell_list_noMSR1_noWNT2_norm
+
+ncell_list_MSR1hi_noWNT2_norm <- matrix(c(100*ncell_list_MSR1hi_noWNT2[1:10]/cells_per_cluster_per_condition[5],
+                                          100*ncell_list_MSR1hi_noWNT2[11:20]/cells_per_cluster_per_condition[6], 
+                                          100*ncell_list_MSR1hi_noWNT2[21:30]/cells_per_cluster_per_condition[7], 
+                                          100*ncell_list_MSR1hi_noWNT2[31:40]/cells_per_cluster_per_condition[8]), 
+                                        ncol = 4, 
+                                        dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control=203", "Dll4KO=0", "RbpjKO=44", "Notch1KO=12")))
+
+ncell_list_MSR1hi_noWNT2_norm
+
+ncell_list_MSR1lo_noWNT2_norm <- matrix(c(100*ncell_list_MSR1lo_noWNT2[1:10]/cells_per_cluster_per_condition[9],
+                                          100*ncell_list_MSR1lo_noWNT2[11:20]/cells_per_cluster_per_condition[10], 
+                                          100*ncell_list_MSR1lo_noWNT2[21:30]/cells_per_cluster_per_condition[11], 
+                                          100*ncell_list_MSR1lo_noWNT2[31:40]/cells_per_cluster_per_condition[12]), 
+                                        ncol = 4, 
+                                        dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control=141", "Dll4KO=103", "RbpjKO=214", "Notch1KO=66")))
+
+ncell_list_MSR1lo_noWNT2_norm
+
+ncell_list_MSR1hi_WNT2lo_norm <- matrix(c(100*ncell_list_MSR1hi_WNT2lo[1:10]/cells_per_cluster_per_condition[13],
+                                          100*ncell_list_MSR1hi_WNT2lo[11:20]/cells_per_cluster_per_condition[14], 
+                                          100*ncell_list_MSR1hi_WNT2lo[21:30]/cells_per_cluster_per_condition[15], 
+                                          100*ncell_list_MSR1hi_WNT2lo[31:40]/cells_per_cluster_per_condition[16]), 
+                                        ncol = 4, 
+                                        dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control=70", "Dll4KO=0", "RbpjKO=59", "Notch1KO=17")))
+
+ncell_list_MSR1hi_WNT2lo_norm 
+
+ncell_list_MSR1lo_WNT2lo_norm <- matrix(c(100*ncell_list_MSR1lo_WNT2lo[1:10]/cells_per_cluster_per_condition[17],
+                                          100*ncell_list_MSR1lo_WNT2lo[11:20]/cells_per_cluster_per_condition[18], 
+                                          100*ncell_list_MSR1lo_WNT2lo[21:30]/cells_per_cluster_per_condition[19], 
+                                          100*ncell_list_MSR1lo_WNT2lo[31:40]/cells_per_cluster_per_condition[20]), 
+                                        ncol = 4, 
+                                        dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control=70", "Dll4KO=0", "RbpjKO=59", "Notch1KO=17")))
+
+ncell_list_MSR1lo_WNT2lo_norm
+
+ncell_list_MSR1hi_WNT2hi_norm <- matrix(c(100*ncell_list_MSR1hi_WNT2hi[1:10]/cells_per_cluster_per_condition[21],
+                                          100*ncell_list_MSR1hi_WNT2hi[11:20]/cells_per_cluster_per_condition[22], 
+                                          100*ncell_list_MSR1hi_WNT2hi[21:30]/cells_per_cluster_per_condition[23], 
+                                          100*ncell_list_MSR1hi_WNT2hi[31:40]/cells_per_cluster_per_condition[24]), 
+                                        ncol = 4, 
+                                        dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control=3", "Dll4KO=0", "RbpjKO=2", "Notch1KO=7")))
+
+ncell_list_MSR1hi_WNT2hi_norm
+
+ncell_list_MSR1lo_WNT2hi_norm <- matrix(c(100*ncell_list_MSR1lo_WNT2hi[1:10]/cells_per_cluster_per_condition[25],
+                                          100*ncell_list_MSR1lo_WNT2hi[11:20]/cells_per_cluster_per_condition[26], 
+                                          100*ncell_list_MSR1lo_WNT2hi[21:30]/cells_per_cluster_per_condition[27], 
+                                          100*ncell_list_MSR1lo_WNT2hi[31:40]/cells_per_cluster_per_condition[28]), 
+                                        ncol = 4, 
+                                        dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control=6", "Dll4KO=4", "RbpjKO=32", "Notch1KO=51")))
+
+ncell_list_MSR1lo_WNT2hi_norm
+
+ncell_list_noMSR1_WNT2lo_norm <- matrix(c(100*ncell_list_noMSR1_WNT2lo[1:10]/cells_per_cluster_per_condition[29],
+                                          100*ncell_list_noMSR1_WNT2lo[11:20]/cells_per_cluster_per_condition[30], 
+                                          100*ncell_list_noMSR1_WNT2lo[21:30]/cells_per_cluster_per_condition[31], 
+                                          100*ncell_list_noMSR1_WNT2lo[31:40]/cells_per_cluster_per_condition[32]), 
+                                        ncol = 4, 
+                                        dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control=165", "Dll4KO=238", "RbpjKO=160", "Notch1KO=286")))
+
+ncell_list_noMSR1_WNT2lo_norm
+
+ncell_list_noMSR1_WNT2hi_norm <- matrix(c(100*ncell_list_noMSR1_WNT2hi[1:10]/cells_per_cluster_per_condition[33],
+                                          100*ncell_list_noMSR1_WNT2hi[11:20]/cells_per_cluster_per_condition[34], 
+                                          100*ncell_list_noMSR1_WNT2hi[21:30]/cells_per_cluster_per_condition[35], 
+                                          100*ncell_list_noMSR1_WNT2hi[31:40]/cells_per_cluster_per_condition[36]), 
+                                        ncol = 4, 
+                                        dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control=256", "Dll4KO=275", "RbpjKO=200", "Notch1KO=435")))
+
+ncell_list_noMSR1_WNT2hi_norm
+
+```
+
+```{r plotting of normalized data}
+
+ncell_list_all_norm <- matrix(c(ncell_list_noMSR1_noWNT2_norm, ncell_list_MSR1hi_noWNT2_norm, ncell_list_MSR1lo_noWNT2_norm, ncell_list_MSR1hi_WNT2lo_norm, ncell_list_MSR1lo_WNT2lo_norm, ncell_list_MSR1hi_WNT2hi_norm, ncell_list_MSR1lo_WNT2hi_norm, ncell_list_noMSR1_WNT2lo_norm, ncell_list_noMSR1_WNT2hi_norm), ncol = 36,
+                              dimnames = list(c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"),
+                                                        c("Control", "Dll4KO", "RbpjKO", "Notch1KO","Control", "Dll4KO", "RbpjKO", "Notch1KO","Control", "Dll4KO", "RbpjKO", "Notch1KO","Control", "Dll4KO", "RbpjKO", "Notch1KO","Control", "Dll4KO", "RbpjKO", "Notch1KO","Control", "Dll4KO", "RbpjKO", "Notch1KO","Control", "Dll4KO", "RbpjKO", "Notch1KO","Control", "Dll4KO", "RbpjKO", "Notch1KO","Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+
+ncell_list_all_norm
+
+
+p1 <- barplot(ncell_list_noMSR1_noWNT2_norm, xlim = c(0.3, 4.6), col = my_palette, ylab = "% Cell Count", main = "noMSR1-noWNT2 per cluster")
+
+p2 <- barplot(ncell_list_MSR1hi_noWNT2_norm, xlim = c(0.3, 4.6), col = my_palette, main = "MSR1hi-noWNT2 per cluster")
+
+p3 <- barplot(ncell_list_MSR1lo_noWNT2_norm, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1lo-noWNT2 per cluster")
+
+p4 <- barplot(ncell_list_MSR1hi_WNT2lo_norm, xlim = c(0.3, 4.6), col = my_palette, ylab = "% Cell Count", main = "MSR1hi-WNT2lo per cluster")
+
+p5 <- barplot(ncell_list_MSR1lo_WNT2lo_norm, xlim = c(0.3, 4.6), col = my_palette, main = "MSR1lo-WNT2lo per cluster")
+
+p6 <- barplot(ncell_list_MSR1hi_WNT2hi_norm, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1hi-WNT2hi per cluster")
+
+p7 <- barplot(ncell_list_MSR1lo_WNT2hi_norm, xlim = c(0.3, 4.6), col = my_palette, ylab = "% Cell Count", xlab = "Condition", main = "MSR1lo-WNT2hi per cluster")
+
+p8 <- barplot(ncell_list_noMSR1_WNT2lo_norm, xlim = c(0.3, 4.6), col = my_palette, xlab = "Condition", main = "noMSR1-WNT2lo per cluster")
+
+p9 <- barplot(ncell_list_noMSR1_WNT2hi_norm, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, xlab = "Condition", legend.text = c("C0a", "C0v", "C1", "C2", "C3", "C4ip", "C4p", "C5", "C6a", "C6v"), args.legend = list(x = "right", inset = c(0, 0)), main = "noMSR1-WNT2hi per cluster")
+
+
+ncell_list_all_norm_dataframe <- as.data.frame(ncell_list_all_norm)
+
+write.xlsx(ncell_list_all_norm_dataframe, "./ncell_list.xlsx", colnames = T)
+
+```

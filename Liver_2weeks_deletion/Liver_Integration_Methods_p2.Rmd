@@ -1,0 +1,239 @@
+---
+title: "Liver_Integration_Methods_p2"
+author: "Alvaro Regano"
+date: "02/12/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+#knitr::opts_knit$set(root.dir= normalizePath('..'))
+#knitr::opts_chunk$set(error = FALSE)
+options(width = 9000)
+
+```
+
+```{r library, echo=FALSE}
+library(Seurat)
+library(ggplot2)
+library("dplyr")
+library("knitr")
+library("rmarkdown")
+library("yaml")
+library("patchwork")
+```
+
+
+## Integrating by Sequencing Depth without Control(4d)
+
+
+```{r IntLiv2weeks, fig.asp=0.8,echo=FALSE}
+
+Liver <- readRDS("../rds/Liver_2wdeletion.v4.ECs.rds")
+
+High <- subset(Liver, subset = Condition == "Control" | Condition == "Dll4KO" | Condition == "NOTCH1KO" | Condition == "RBPJKO" )
+
+High <- SetIdent(High, value = "High")
+
+Low <- subset(Liver, subset = Condition == "Dll4/MycKO" | Condition == "Jag1/Jag2/Dll1KO(2w)" )
+
+Low <- SetIdent(Low, value = "Low")
+
+Liver <- merge(High, y = Low,
+               project = "Liver_Control")
+
+Liver@meta.data$SeqDepth <- Liver@active.ident
+
+# saveRDS(Liver, "../rds/Liver2w.integration.ECs.rds")
+
+condition.list <- SplitObject(Liver, split.by = "SeqDepth")
+
+condition.list <- lapply(X = condition.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 3000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = condition.list)
+
+# Perform Integration
+
+condition.anchors <- FindIntegrationAnchors(object.list = condition.list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+condition.combined <- IntegrateData(anchorset = condition.anchors)
+
+
+# Perform Integrated Analysis
+
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+DefaultAssay(condition.combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+condition.combined <- ScaleData(condition.combined, verbose = FALSE)
+condition.combined <- RunPCA(condition.combined, npcs = 30, verbose = FALSE)
+condition.combined <- RunUMAP(condition.combined, reduction = "pca", dims = 1:6, min.dist = 0.2, n.neighbors = 50, verbose = F)
+condition.combined <- FindNeighbors(condition.combined, dims = 1:6, prune.SNN = 1/7, n.trees = 50, k.param = 50)
+condition.combined <- FindClusters(condition.combined, resolution = 0.26)
+
+# Visualization
+p16 <- DimPlot(condition.combined, label = T, pt.size = 2, label.size = 8) + scale_x_reverse()+ scale_y_reverse()
+p17 <- DimPlot(condition.combined, label = T, group.by = "NewClustering", pt.size = 2, label.size = 8) + scale_x_reverse()+ scale_y_reverse()
+
+p18 <- DimPlot(condition.combined, reduction = "umap", split.by = "Condition", pt.size = 1.5, label = T)+ scale_x_reverse()+ scale_y_reverse()
+p19 <- DimPlot(condition.combined, reduction = "umap", label = TRUE, repel = TRUE, group.by = "NewClustering", split.by = "Condition", pt.size = 1.5)+ scale_x_reverse()+ scale_y_reverse()
+
+p20 <- FeaturePlot(condition.combined, features = "nCount_RNA", pt.size = 2)+ scale_x_reverse()+ scale_y_reverse()
+
+p16
+p17
+p20
+
+```
+
+```{r plotSeqdepthLiv2w, fig.height=5, fig.width=30,echo=FALSE}
+
+p18
+
+```
+
+```{r plotSeqdepth2Liv2w, fig.height=10, fig.width=30,echo=FALSE}
+
+p19
+
+```
+
+We are losing AV zonation again, but it does seem that Integrating by Sequencing Depth is the way to go. I will try with another Transform, the same that was used in Zarkada et al., 2021 and many other scRNASeq datasets, SCTransform
+
+# Integration using SCTransform
+
+Let's see if I can recover AV zonation in some way
+
+```{r SCTransform, fig.asp = 0.8,echo=FALSE}
+
+seqdepth.list <- SplitObject(Liver, split.by = "SeqDepth")
+seqdepth.list <- lapply(X = seqdepth.list, FUN = SCTransform, verbose = F)
+features <- SelectIntegrationFeatures(object.list = seqdepth.list, nfeatures = 2000, verbose = F)
+seqdepth.list <- PrepSCTIntegration(object.list = seqdepth.list, anchor.features = features)
+
+seqdepth.anchors <- FindIntegrationAnchors(object.list = seqdepth.list, normalization.method = "SCT",
+                                         anchor.features = features, verbose = F)
+seqdepth.combined.sct <- IntegrateData(anchorset = seqdepth.anchors, normalization.method = "SCT", verbose = F)
+
+seqdepth.combined.sct <- RunPCA(seqdepth.combined.sct, npcs = 30, verbose = FALSE)
+seqdepth.combined.sct <- RunUMAP(seqdepth.combined.sct, dims = 1:6, min.dist = 0.2, n.neighbors = 50)
+seqdepth.combined.sct <- FindNeighbors(seqdepth.combined.sct, dims = 1:6, prune.SNN = 1/7, n.trees = 50, k.param = 50)
+seqdepth.combined.sct <- FindClusters(seqdepth.combined.sct, resolution = 0.35)
+
+DimPlot(seqdepth.combined.sct)
+
+# Visualization
+
+p21 <- DimPlot(seqdepth.combined.sct, label = T, pt.size = 2, label.size = 8) + scale_x_reverse()+ scale_y_reverse()
+p22 <- DimPlot(seqdepth.combined.sct, label = T, group.by = "NewClustering", pt.size = 2, label.size = 8) + scale_x_reverse()+ scale_y_reverse()
+
+p23 <- DimPlot(seqdepth.combined.sct, reduction = "umap", split.by = "Condition", pt.size = 1.5, label = T)+ scale_x_reverse()+ scale_y_reverse()
+p24 <- DimPlot(seqdepth.combined.sct, reduction = "umap", label = TRUE, repel = TRUE, group.by = "NewClustering", split.by = "Condition", pt.size = 1.5)+ scale_x_reverse()+ scale_y_reverse()
+
+p25 <- FeaturePlot(seqdepth.combined.sct, features = "nCount_RNA", pt.size = 2)+ scale_x_reverse()+ scale_y_reverse()
+
+p21
+p22
+p25
+```
+
+Here it looks like AV zonation is not well separated again, there are some C6a cells that cluster together with C6v. I will increase the dimensionality of the dataset (since I am at 6 dimensions I should not go below this, specially since the plots make no sense from 5 and below dimensions) and see where that goes
+
+
+```{r SCTransform2, fig.height=5, fig.width=30,echo=FALSE}
+
+p23
+
+```
+
+```{r SCTransform3, fig.height=10, fig.width=30,echo=FALSE}
+
+p24
+
+```
+
+I will go for 17 dimensions now, since I did a quick rescanning and decided to go for that plot, as it is the one I see gives the "clearest" behavior in the dataset
+
+
+```{r SCTdim17, fig.asp=0.8,echo=FALSE}
+
+seqdepth.combined.sct <- RunUMAP(seqdepth.combined.sct, reduction = "pca", dims = 1:17, min.dist = 0.2, n.neighbors = 50, verbose = F)
+seqdepth.combined.sct <- FindNeighbors(seqdepth.combined.sct, dims = 1:17, prune.SNN = 1/7, n.trees = 50, k.param = 50, reduction = "umap.sct.17dim")
+seqdepth.combined.sct <- FindClusters(seqdepth.combined.sct, resolution = 0.22)
+
+
+p25 <- DimPlot(seqdepth.combined.sct, label = T, pt.size = 2, label.size = 8)+scale_x_reverse()
+p26 <- DimPlot(seqdepth.combined.sct, label = T, group.by = "NewClustering", pt.size = 2, label.size = 8)+scale_x_reverse()
+
+p27 <- DimPlot(seqdepth.combined.sct, reduction = "umap", split.by = "Condition", pt.size = 1.5, label = T)+ scale_x_reverse()
+
+p28 <- DimPlot(seqdepth.combined.sct, reduction = "umap", label = TRUE, repel = TRUE, group.by = "NewClustering", split.by = "Condition", pt.size = 1.5)+ scale_x_reverse()
+
+p25
+p26
+
+
+```
+
+```{r plotSCTLiv2w3, fig.height=5, fig.width=30,echo=FALSE}
+
+p27
+
+```
+
+
+```{r plotSCT2Liv2w4, fig.height=10, fig.width=30,echo=FALSE}
+
+p28
+
+```
+
+If I take 17 dimensions I can see a visually clearer plot when Integrating the samples. The automatic clustering still gives me a good biological information. Using Carlos' already stablished clustering (NewClustering) I get that:
+
+Mine  Carlos
+
+C7 -> C6a 
+
+C6 -> C6v
+
+C5 -> C4i&C4ip
+
+C4 -> C3 (Tip Cells)
+
+C3 -> C2
+
+C2 -> C0a
+
+C1 -> C1+C5
+
+C0 -> C0v
+
+
+
+# Conclusion
+
+Integration in terms of Sequencing Depth makes the dataset work much better altogether, however, the spatial AV zonation we are used to seeing gets lost and this time I do not know how can I recover it. 
+
+If I try going for a higher number of dimensions I get a plot that is very similar to what I got with Irepan when he was here in October. The clustering can be set up so it mimics quite well what Carlos had. One thing to note though, is that C6a gets split into Arteries and Arteries Mutant, where the mutant arteries develop a venous phenotype, that makes them go spatially to that region while still belonging to the arterial cluster (C7)
+
+If this clustering makes sense maybe we should consider using this new UMAP, as it reflects better the biological behavior by discarding batch effects. Alternatively, if we want to go back to a plot that is more similar to what Carlos got, I will need to work longer with this and maybe ask for help.
+
+```{r session, ,echo=FALSE}
+
+sessionInfo()
+
+```

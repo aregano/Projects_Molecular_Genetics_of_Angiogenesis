@@ -1,0 +1,160 @@
+---
+title: "Sample_09_03_Tomato"
+author: "Irepan Salvador-Martinez"
+date: "18/05/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "100%", fig.align = "center",fig.width = 8,fig.height = 5,
+  message = FALSE, warning = FALSE
+)
+options(width = 1200)
+```
+
+
+
+
+
+```{r packages}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(DoubletFinder)
+library(BiocStyle)
+library(dittoSeq)
+```
+
+
+```{r}
+source(file = "../seurat2shiny.R")
+```
+
+```{r Load precomputed data}
+Sample_09_03_Tomato_nonblood <- readRDS("Sample_09_03_Tomato_nonblood.rds")
+Sample_09_03_Tomato_endoth <- readRDS("Sample_09_03_Tomato_endoth.rds")
+```
+
+In this sample there is a mix of **Blood, Liver, Heart and Lung cells**
+
+![Loaded cells](./loaded_cells.png){#id .class width=70%}
+
+From this image we expect to have 
+```{r cells loaded}
+
+cells_loaded <- data.frame(tissue=c("Blood", "Liver","Heart", "Lung"),
+                           count= c(2097,53000,23048,26461) )
+cells_loaded$proportion <- cells_loaded$count/sum(cells_loaded$count)
+ggplot(data=cells_loaded, aes(x=tissue, y=proportion, fill=tissue)) +
+  geom_bar(stat="identity") +   theme_minimal()
+
+```
+
+
+
+```{r}
+p1 = DimPlot(Sample_09_03_Tomato_nonblood, reduction = "umap",
+             group.by = "predicted.tissue", pt.size = 0.5, 
+             label = TRUE, label.size = 5, repel = TRUE)
+p2 = DimPlot(Sample_09_03_Tomato_nonblood, reduction = "umap",
+             group.by = "RNA_snn_res.0.05",  pt.size = 0.7, 
+             label = TRUE, label.size = 5 ,repel = TRUE) + NoLegend()
+p5 <- FeaturePlot(Sample_09_03_Tomato_nonblood, features = "Cdh5") + NoLegend()
+p3 <- ggplot(data=cells_loaded, aes(x=tissue, y=proportion, fill=tissue)) +
+      geom_bar(stat="identity") +   theme_minimal()
+p4 <- dittoBarPlot(Sample_09_03_Tomato_nonblood, "predicted.tissue",
+                   group.by = "RNA_snn_res.0.05")
+(p1 +  p2 ) / p5
+p3 + p4
+```
+
+
+
+```{r Graph based Clustering nonblood}
+x <- Sample_09_03_Tomato_nonblood@meta.data$RNA_snn_res.0.05  %in%  as.character(c(0,1,3))
+Sample_09_03_Tomato_endoth <- subset(Sample_09_03_Tomato_nonblood, cells = colnames(Sample_09_03_Tomato_nonblood)[x])
+Sample_09_03_Tomato_endoth <- FindVariableFeatures(Sample_09_03_Tomato_endoth, 
+                                         selection.method = "vst",
+                                         nfeatures = 2000)
+Sample_09_03_Tomato_endoth <- RunPCA(Sample_09_03_Tomato_endoth,
+                                  features = VariableFeatures(object = Sample_09_03_Tomato_endoth))
+Sample_09_03_Tomato_endoth <- FindNeighbors(Sample_09_03_Tomato_endoth, dims = 1:20)
+Sample_09_03_Tomato_endoth <- FindClusters(Sample_09_03_Tomato_endoth, resolution = 0.1)
+Sample_09_03_Tomato_endoth <- FindClusters(Sample_09_03_Tomato_endoth, resolution = 0.05)
+
+Sample_09_03_Tomato_endoth <- RunUMAP(Sample_09_03_Tomato_endoth, dims = 1:20)
+
+```
+
+
+
+```{r, eval=FALSE}
+seurat2shiny(Sample_09_03_Tomato_endoth, save = T, name = "Sample_09_03_Tomato_endoth")
+```
+
+
+
+```{r plot UMAP nonblood}
+# note that you can set `label = TRUE` or use the LabelClusters function to help label
+# individual clusters
+p1 <- DimPlot(Sample_09_03_Tomato_endoth, reduction = "umap",
+             group.by = "predicted.tissue", pt.size = 0.5, 
+             label = TRUE, label.size = 5, repel = TRUE)
+p2 <- DimPlot(Sample_09_03_Tomato_endoth, reduction = "umap",
+             group.by = "RNA_snn_res.0.05",  pt.size = 0.7, 
+             label = TRUE, label.size = 5 ,repel = TRUE) + NoLegend()
+p1 + p2
+```
+
+```{r}
+FeaturePlot(Sample_09_03_Tomato_endoth,
+            features = c("Vcam1", "Cpe", "Prss23", "Vwf" ) ) ## Venous
+```
+
+
+```{r}
+FeaturePlot(Sample_09_03_Tomato_endoth,
+            features = c("Atp13a3", "Bmx", "Fbln2", "Fbln2" ) ) ## Arterial
+```
+
+
+```{r}
+FeaturePlot(Sample_09_03_Tomato_endoth,
+            features = c("Car4", "Bmx", "Fbln2", "Fbln2" ) ) ## Arterial
+```
+
+
+
+
+### Some of the MARKER genes.
+RSPO3 (Veins), Wnt2 (Venous capillaries), LTBP4 (Arterial capillaries), Gja5 (Arteries), Odc1 (Dll4 or Rbpj LOF Highly Metabolic cells), Mki67 (Proliferating Cells in G2/M) and MCM6 for cells in S-phase.
+
+
+
+```{r}
+FeaturePlot(Sample_09_03_Tomato_endoth,
+            features = c("Odc1", ## Dll4 or Rbpj LOF Highly Metabolic cells
+                         "Mki67", ## Proliferating Cells in G2/M
+                         "Mcm6") ## cells in S-phase
+            ) 
+```
+
+
+```{r}
+FeaturePlot(Sample_09_03_Tomato_endoth,
+            features = c("Rspo3", ## veins
+                         "Wnt2", ## venous capillaries
+                         "Ltbp4", ## Arterial capillaries
+                         "Fbln2" ) ## Arterial
+            ) 
+```
+
+
+```{r, eval=FALSE }
+saveRDS(Sample_09_03_Tomato_endoth, file = "Sample_09_03_Tomato_endoth.rds")
+```

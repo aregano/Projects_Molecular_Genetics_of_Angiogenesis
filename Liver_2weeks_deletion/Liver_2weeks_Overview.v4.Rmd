@@ -1,0 +1,120 @@
+---
+title: "Liver_2weeks_Overview"
+author: "Alvaro Regano"
+date: "28/11/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+#knitr::opts_knit$set(root.dir= normalizePath('..'))
+#knitr::opts_chunk$set(error = FALSE)
+options(width = 9000)
+
+```
+## 
+
+```{r library, echo=FALSE}
+library(Seurat)
+library(ggplot2)
+library("knitr")
+library("rmarkdown")
+library("yaml")
+library("patchwork")
+```
+
+# Liver 2 week deletion Overview
+
+## Carlos Original UMAP and Clusters
+
+I will make a quick overview of the quality of the integration of the Liver 2 week deletion plot. 
+First I will plot the starting UMAP plot we got from Carlos of Liver 20Jan21
+
+![Carlos_UMAP](../Plots/Rui_Comparisons/UMAP_Carlos_settings_res_0.35.png)
+
+![Carlos_UMAP_New_Clustering](../Plots/Rui_Comparisons/UMAP_Carlos_NewClustering.png)
+
+## Liver Integration 2 weeks. 7 dimensions
+
+Now moving onto the plots I produced with the integrated samples. Lets start with the 7 dimensions plot. AV zonation takes the croissant shape, meaning the clear spread across the plot is lost. I am using the same settings Carlos had.
+
+I also include Carlos' Clustering done with the previous 4 conditions, so you can look at the spread.
+
+```{r UMAPdim7, fig.asp=0.8, echo=FALSE}
+
+Liver <- readRDS("../rds/Liver_2wdeletion.v4.ECs.rds")
+
+Liver <- NormalizeData(Liver, 
+                                normalization.method = "LogNormalize",
+                                scale.factor = 10000)
+
+# Identification of highly variable features (feature selection)
+
+Liver <- FindVariableFeatures(Liver, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(Liver)
+
+Liver <- ScaleData(Liver, features = all.genes)
+
+Liver <- RunPCA(Liver, features = VariableFeatures(object = Liver))
+
+Liver <- FindNeighbors(Liver, dims = 1:7)
+Liver <- FindClusters(Liver, resolution = 0.25)
+Liver <- RunUMAP(Liver, dims = 1:7, seed.use = 123456)
+
+p1 <- DimPlot(Liver, label = T, pt.size = 2, label.size = 12) + scale_x_reverse()
+p1
+
+p2 <- DimPlot(Liver, label = T, group.by = "NewClustering",pt.size = 2, label.size = 12) + scale_x_reverse()
+p2
+
+```
+
+```{r UMAPdim7split, fig.asp=0.3, echo=FALSE}
+
+p3 <- DimPlot(Liver, split.by = "Condition", label = T) + scale_x_reverse()
+p3
+
+```
+
+```{r UMAPdim7split2, fig.asp=0.6, echo=FALSE}
+
+p4 <- DimPlot(Liver, group.by = "NewClustering", split.by = "Condition", label = T) + scale_x_reverse()
+p4
+
+```
+```{r cars}
+summary(cars)
+```
+
+## Current Working model. Liver Integration 2 weeks. 6 dimensions, min.dist = 0.2, neighbours = 100, 2500 Variable Features.
+
+This is the UMAP I produced that best mimicks what Carlos gave us. It does not use the same settings. I use 2500 variable features instead, a min.dist of 0.2 and n.neighbours = 100 for the plotting of the UMAP.
+
+```{r FinalUMAP, fig.height= 15, fig.width=15 , echo=FALSE}
+
+Liver <- FindVariableFeatures(Liver, selection.method = "vst", nfeatures = 2500)
+Liver <- RunPCA(Liver, features = VariableFeatures(object = Liver))
+
+Liver <- RunUMAP(Liver, dims = 1:6, min.dist = 0.2, n.neighbors = 100, seed.use = 123456)
+Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = 1/7, n.trees = 50, k.param = 50)
+Liver <- FindClusters(Liver, resolution = 0.26)
+
+p1 <- DimPlot(Liver, label = T, pt.size = 2, label.size = 8)
+
+p1
+
+p2 <- DimPlot(Liver, label = T, group.by = "NewClustering",pt.size = 2, label.size = 8)
+p2
+
+```
+
+

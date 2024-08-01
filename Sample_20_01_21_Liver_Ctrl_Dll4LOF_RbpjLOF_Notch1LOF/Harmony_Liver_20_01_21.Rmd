@@ -1,0 +1,240 @@
+---
+title: "Harmony_Liver20_01_21"
+author: "Alvaro Regano"
+date: "11/5/2021"
+output:
+    BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+```
+
+# About the analysis
+
+The data was taken from the Liver 20-01-21 sample processed by Carlos Torroja up to the QC and feature selection step. From here I performed Dimensionality Reduction to find the optimal way of Clustering the data. We set up for 19 Dimensions at a 0.9 resolution. From there we defined different clusters and performed subclustering on specific plots, so as to give a biological understanding of the dataset.
+
+Trying Harmony on the different Conditions v Control, specially on Dll4 since it differs greatly from Control
+
+# Objective
+
+To try harmony of Dll4 KO vs Control; Dll4 KO vs Notch1 and Dll4KO vs RbpjKO. 
+This will reveal if the Dll4KO “arterial” population is really only arterial (I think it is not, and has BOTH venous and arterial cells that do not become tip-like).
+It will also show that the tip cell cluster is really the only unique cluster of the Dll4KO group, whereas the other cells should be closer (on top) to some N1 and Rbpj KO cells.
+
+# Analysis
+
+```{r library}
+library(Seurat)
+library(harmony)
+library(patchwork)
+library(ggplot2)
+library(dplyr)
+library(BiocStyle)
+library(cowplot)
+library(dittoSeq)
+```
+
+
+## Subsetting data
+
+
+```{r subsetting}
+
+Liver <- readRDS("../Liver.Alvaro.mkIV.rds")
+
+# We order dataset in terms of the specified color palette
+
+my_palette_Rui_colors <- c("#FC0808", "#E95A74", "#F24CF2", "#C1B80C", "#F4A753","#A80519", "#45FF8E", "#2EFFFC", "#50B6EF", "#00A79D", "#0E47D8", 
+                           "#880088", "#008800", "#E28CF4", "#A90DFC")
+
+my_palette_Rui_colors_mut <- c("#E95A74", "#F24CF2", "#C1B80C", "#F4A753","#A80519", "#45FF8E", "#50B6EF", "#00A79D", "#0E47D8", 
+                           "#880088", "#008800", "#E28CF4", "#A90DFC")
+
+Liver@meta.data$DefClustering <- factor(Liver@meta.data$DefClustering, levels=c("Arteries", "Arteries Mutant", "Capillary Arterial", "Activated Dll4KO Arterial ECs", "Quiescent Capillary", "Activated Dll4KO Venous/Tip Cells", "Activated Capillary Venous", 
+                                                                                                              "Int Veins", "Capillary Venous", "Veins", "Big Veins", "Malat1Neg Weak ECs", "Notch1KO specific", "G2M phase", "S phase"))
+
+#  Perform subsetting
+
+
+Liver_Control <- subset(Liver, subset = Condition == "Control")
+Liver_Dll4 <- subset(Liver, subset = Condition == "Dll4KO")
+Liver_RbpjKO <- subset(x = Liver, subset = Condition == "RBPJKO")
+Liver_Notch1KO <- subset(x = Liver, subset = Condition == "NOTCH1KO")
+
+```
+
+
+## Dll4KO v Control
+
+
+```{r dll4vCtrl}
+
+# We start with Dll4KOv Control
+
+Control_Dll4_Harmony <- merge(Liver_Control, y = Liver_Dll4,
+                              project = "Liver_Ctrl_Dll4_Harmony") %>%
+  Seurat::NormalizeData(verbose = T) %>%
+  FindVariableFeatures(selection.method = "vst", nfeatures = 3000)# %>% 
+
+Control_Dll4_Harmony <- ScaleData(Control_Dll4_Harmony, verbose = TRUE,
+                                  features= rownames(Control_Dll4_Harmony) ) %>% 
+  RunPCA(pc.genes = Control_Dll4_Harmony@var.genes, npcs = 20, verbose = TRUE)
+
+# Look at PCA plots
+
+options(repr.plot.height = 5, repr.plot.width = 12)
+p1 <- DimPlot(object = Control_Dll4_Harmony, reduction = "pca", pt.size = .1, group.by = "Condition")
+p2 <- VlnPlot(object = Control_Dll4_Harmony, features = "PC_1", group.by = "Condition", pt.size = .1)
+plot_grid(p1,p2)
+
+# Run Harmony
+
+Control_Dll4_Harmony <- Control_Dll4_Harmony %>% 
+  RunHarmony("Condition", plot_convergence = T)
+
+harmony_embeddings <- Embeddings(Control_Dll4_Harmony, 'harmony')
+harmony_embeddings[1:5, 1:5]
+
+p1 <- DimPlot(object = Control_Dll4_Harmony, reduction = "harmony", pt.size = .1, group.by = "Condition")
+p2 <- VlnPlot(object = Control_Dll4_Harmony, features = "harmony_1", group.by = "Condition", pt.size = .1)
+plot_grid(p1,p2)
+
+# Build UMAPs
+
+Control_Dll4_Harmony <- Control_Dll4_Harmony %>% 
+  RunUMAP(reduction = "harmony", dims = 1:19) %>% 
+  FindNeighbors(reduction = "harmony", dims = 1:20) %>% 
+  FindClusters(resolution = 0.9) %>% 
+  identity()
+
+Control_Dll4_Harmony@meta.data$DefClustering <- factor(Control_Dll4_Harmony@meta.data$DefClustering, levels=c("Arteries", "Arteries Mutant", "Capillary Arterial", "Activated Dll4KO Arterial ECs", "Quiescent Capillary", "Activated Dll4KO Venous/Tip Cells", "Activated Capillary Venous", 
+                                                                                                              "Int Veins", "Capillary Venous", "Veins", "Big Veins", "Malat1Neg Weak ECs", "Notch1KO specific", "G2M phase", "S phase"))
+
+DimPlot(Control_Dll4_Harmony, reduction = "umap", group.by = "Condition", pt.size = .1)
+
+DimPlot(Control_Dll4_Harmony, reduction = "umap", group.by = "Condition", pt.size = .1, split.by = 'Condition')
+
+DimPlot(Control_Dll4_Harmony, reduction = "umap", group.by = "DefClustering", split.by = 'Condition', cols = my_palette_Rui_colors)
+
+```
+
+Interesting to see that RunHarmony does not produce the expected plot for the iterations ran, which can mean that Dll4 and Ctrl differ too much from each other and the algorithm fails to match some cells, specially the Capillary Arterial cluster on Ctrl
+
+## Dll4KO v RbpjKO
+
+You can also embed plots, for example:
+
+```{r dll4vRbpj}
+
+Rbpj_Dll4_Harmony <- merge(Liver_RbpjKO, y = Liver_Dll4,
+                           project = "Liver_Rboj_Dll4_Harmony") %>%
+  Seurat::NormalizeData(verbose = T) %>%
+  FindVariableFeatures(selection.method = "vst", nfeatures = 3000)# %>% 
+
+Rbpj_Dll4_Harmony <- ScaleData(Rbpj_Dll4_Harmony, verbose = TRUE,
+                               features= rownames(Rbpj_Dll4_Harmony) ) %>% 
+  RunPCA(pc.genes = Rbpj_Dll4_Harmony@var.genes, npcs = 20, verbose = TRUE)
+
+# Look at PCA plots
+
+options(repr.plot.height = 5, repr.plot.width = 12)
+p1 <- DimPlot(object = Rbpj_Dll4_Harmony, reduction = "pca", pt.size = .1, group.by = "Condition")
+p2 <- VlnPlot(object = Rbpj_Dll4_Harmony, features = "PC_1", group.by = "Condition", pt.size = .1)
+plot_grid(p1,p2)
+
+# Run Harmony
+
+Rbpj_Dll4_Harmony <- Rbpj_Dll4_Harmony %>% 
+  RunHarmony("Condition", plot_convergence = T)
+
+harmony_embeddings <- Embeddings(Rbpj_Dll4_Harmony, 'harmony')
+harmony_embeddings[1:5, 1:5]
+
+p1 <- DimPlot(object = Rbpj_Dll4_Harmony, reduction = "harmony", pt.size = .1, group.by = "Condition")
+p2 <- VlnPlot(object = Rbpj_Dll4_Harmony, features = "harmony_1", group.by = "Condition", pt.size = .1)
+plot_grid(p1,p2)
+
+# Build UMAPs
+
+Rbpj_Dll4_Harmony <- Rbpj_Dll4_Harmony %>% 
+  RunUMAP(reduction = "harmony", dims = 1:19) %>% 
+  FindNeighbors(reduction = "harmony", dims = 1:20) %>% 
+  FindClusters(resolution = 0.9) %>% 
+  identity()
+
+Rbpj_Dll4_Harmony@meta.data$DefClustering <- factor(Rbpj_Dll4_Harmony@meta.data$DefClustering, levels=c("Arteries", "Arteries Mutant", "Capillary Arterial", "Activated Dll4KO Arterial ECs", "Quiescent Capillary", "Activated Dll4KO Venous/Tip Cells", "Activated Capillary Venous", 
+                                                                                                              "Int Veins", "Capillary Venous", "Veins", "Big Veins", "Malat1Neg Weak ECs", "Notch1KO specific", "G2M phase", "S phase"))
+
+DimPlot(Rbpj_Dll4_Harmony, reduction = "umap", group.by = "Condition", pt.size = .1)
+
+DimPlot(Rbpj_Dll4_Harmony, reduction = "umap", group.by = "Condition", pt.size = .1, split.by = 'Condition')
+
+DimPlot(Rbpj_Dll4_Harmony, reduction = "umap", group.by = "DefClustering", split.by = 'Condition', cols = my_palette_Rui_colors_mut)
+
+```
+
+
+## Dll4KO v Notch1KO
+
+You can also embed plots, for example:
+
+```{r dll4vNotch1}
+
+Notch1_Dll4_Harmony <- merge(Liver_Notch1KO, y = Liver_Dll4,
+                             project = "Liver_Notch1_Dll4_Harmony") %>%
+  Seurat::NormalizeData(verbose = T) %>%
+  FindVariableFeatures(selection.method = "vst", nfeatures = 3000)# %>% 
+
+Notch1_Dll4_Harmony <- ScaleData(Notch1_Dll4_Harmony, verbose = TRUE,
+                                 features= rownames(Notch1_Dll4_Harmony) ) %>% 
+  RunPCA(pc.genes = Notch1_Dll4_Harmony@var.genes, npcs = 20, verbose = TRUE)
+
+# Look at PCA plots
+
+options(repr.plot.height = 5, repr.plot.width = 12)
+p1 <- DimPlot(object = Notch1_Dll4_Harmony, reduction = "pca", pt.size = .1, group.by = "Condition")
+p2 <- VlnPlot(object = Notch1_Dll4_Harmony, features = "PC_1", group.by = "Condition", pt.size = .1)
+plot_grid(p1,p2)
+
+# Run Harmony
+
+Notch1_Dll4_Harmony <- Notch1_Dll4_Harmony %>% 
+  RunHarmony("Condition", plot_convergence = T)
+
+harmony_embeddings <- Embeddings(Notch1_Dll4_Harmony, 'harmony')
+harmony_embeddings[1:5, 1:5]
+
+p1 <- DimPlot(object = Notch1_Dll4_Harmony, reduction = "harmony", pt.size = .1, group.by = "Condition")
+p2 <- VlnPlot(object = Notch1_Dll4_Harmony, features = "harmony_1", group.by = "Condition", pt.size = .1)
+plot_grid(p1,p2)
+
+# Build UMAPs
+
+Notch1_Dll4_Harmony <- Notch1_Dll4_Harmony %>% 
+  RunUMAP(reduction = "harmony", dims = 1:19) %>% 
+  FindNeighbors(reduction = "harmony", dims = 1:20) %>% 
+  FindClusters(resolution = 0.9) %>% 
+  identity()
+
+Notch1_Dll4_Harmony@meta.data$DefClustering <- factor(Notch1_Dll4_Harmony@meta.data$DefClustering, levels=c("Arteries", "Arteries Mutant", "Capillary Arterial", "Activated Dll4KO Arterial ECs", "Quiescent Capillary", "Activated Dll4KO Venous/Tip Cells", "Activated Capillary Venous", 
+                                                                                                              "Int Veins", "Capillary Venous", "Veins", "Big Veins", "Malat1Neg Weak ECs", "Notch1KO specific", "G2M phase", "S phase"))
+
+DimPlot(Notch1_Dll4_Harmony, reduction = "umap", group.by = "Condition", pt.size = .1)
+
+DimPlot(Notch1_Dll4_Harmony, reduction = "umap", group.by = "Condition", pt.size = .1, split.by = 'Condition')
+
+DimPlot(Notch1_Dll4_Harmony, reduction = "umap", group.by = "DefClustering", split.by = 'Condition', cols = my_palette_Rui_colors_mut)
+
+```
+
+# Conclusions
+
+Dll4KO merges as expected when merging with RbpjKO and Notch1KO , but there are some incongruencies with Ctrl. THe Activated Dll4KO Arterial Cluster does not have a proper arterial Identity as it does not match with other arterial clusters. We shold figure out what is the true identity of this cluster.

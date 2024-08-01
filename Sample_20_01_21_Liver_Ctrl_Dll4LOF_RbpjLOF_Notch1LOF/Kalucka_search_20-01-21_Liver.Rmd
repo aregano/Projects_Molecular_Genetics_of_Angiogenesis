@@ -1,0 +1,166 @@
+---
+title: "Kalucka_search_20-01-21_Liver"
+author: "Alvaro Regano"
+date: "29/09/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+#knitr::opts_knit$set(root.dir= normalizePath('..'))
+#knitr::opts_chunk$set(error = FALSE)
+options(width = 9000)
+
+```
+
+# About the analysis
+
+The plots here come from an analysis from Kalucka supplementary data, where the different markers posted have been taken and analysed over the 20-01-2021 Liver scRNASeq experiment. In said experiments there are four different set of Conditions, Control, Dll4KO, RbpjKO and Notch1KO. In said experiment it has been observed that the traditional arterial phenotype is lost in LOF mice, yet mice can still function. Therefore, we hipothesise that Endothelial Cells develop a new kind of arterial phenotype as an emergency mechanism due to lack of proper traditional arterial EC differentiation. 
+
+For this reason we set into looking at different markers that have been validated as arterial, venous or capillary phenotypes and look at the spread in the 20-01-21 Liver experiment, with the aim of finding a considerable difference in the spread between the Control and the 3 LOF samples. Ideally we want to localize the cluster where the arterial "emergency" phenotype forms in the LOF samples.
+
+# About Kalucka marker setup
+
+The Kalucka supplementary data separates the data in different set of categories, them being:
+
+1. Top 50 highly expressed genes in their own selected clusters:
+  1a. Large artery
+  1b. arterial capillary
+  1c. capillary
+  1d. venous capillary
+  1e. venous
+2. Conserved markers across tissues
+  2a. artery
+  2b. vein
+  2c. capillary
+3. Specific markers in each tissue (liver)
+  3a. artery
+  3b. vein
+  3c. capillary
+4. Proliferating
+5. Metabolic
+
+The same criteria will be used when showing the plots.
+
+#   Objective
+
+We want to see a clear difference in the arterio-venous differentiation spread of Control vs. LOF (Dll4, Rbpj, Notch1) samples 
+
+# Analysis
+
+```{r packages}
+library("Seurat")
+library("openxlsx")
+library("knitr")
+library("rmarkdown")
+library("yaml")
+```
+
+```{r rds object}
+
+Carlos <- readRDS("SC.Analysis.SecondPass.RNA.Singlets.Endothelial.ManualClustering.seuratSC.Final.V4.rds")
+
+```
+
+## 1.Top 50 highly expressed genes in their own selected clusters
+
+### a. Large Artery
+
+![Top50_large_artery](./Plots/Kalucka_info_plots/Top50_large_artery.png)
+![Top50_large_artery_Vln](./Plots/Kalucka_info_plots/Top50_large_artery_VlnPlot.png)
+
+### b. Arterial capillary
+
+![Top50_arterial_capillary](./Plots/Kalucka_info_plots/Top50_arterial_capillary.png)
+
+![Top50_arterial_capillary_Vln](./Plots/Kalucka_info_plots/Top50_arterial_capillary_VlnPlot.png)
+
+
+### c. Capillary
+
+![Top50_capillary](./Plots/Kalucka_info_plots/Top50_capillary.png)
+![Top50_capillary_Vln](./Plots/Kalucka_info_plots/Top50_capillary_aVlnPlot.png)
+
+### d. Venous Capillary
+
+![Top50_capillary_venous](./Plots/Kalucka_info_plots/Top50_capillary_venous.png)
+![Top50_capillary_venous](./Plots/Kalucka_info_plots/Top50_capillary_venous_VlnPlot.png)
+
+### e. Venous
+
+![Top50_venous](./Plots/Kalucka_info_plots/Top50_venous.png)
+![Top50_venous_Vln](./Plots/Kalucka_info_plots/Top50_venous_VlnPlot.png)
+
+## 2.Conserved markers across tissues
+
+
+### a. Artery
+
+![Conserved_artery](./Plots/Kalucka_info_plots/Conserved_Artery.png)
+
+### b. Vein
+
+![Conserved_vein](./Plots/Kalucka_info_plots/Conserved_Vein.png)
+
+### c. Capillary
+
+There were no remarkable markers in this section (capillary markers tend to be expressed in all cells)
+
+## 3. Specific markers in each tissue (liver)
+
+### a. Artery
+
+![Specific_Artery](./Plots/Kalucka_info_plots/Liver_specific_Artery.png)
+
+
+### b. Vein
+
+![Specific_Vein](./Plots/Kalucka_info_plots/Liver_specific_vein.png)
+
+### c. Capillary
+
+Again, no remarkable markers to be found here
+
+## 4. Proliferating
+
+![Proliferating](./Plots/Kalucka_info_plots/Top50_proliferating.png)
+![Proliferating_Vln](./Plots/Kalucka_info_plots/Top50_proliferating_VlnPlot.png)
+
+## 5. Metabolic
+
+![Metabolic](./Plots/Kalucka_info_plots/Top50_metabolic.png)
+![Metabolic_Vln](./Plots/Kalucka_info_plots/Top50_metabolic_VlnPlot.png)
+
+## 6. EDNRB
+
+```{r EDNRB}
+
+EDNRB <- FeaturePlot(Carlos, split.by = "Condition", features = "EDNRB")
+EDNRB
+
+```
+
+![EDNRB](./Plots/Kalucka_info_plots/Violinplot_EDNRB.png)
+![EDNRB](./Plots/Kalucka_info_plots/Violinplot_EDNRB_Clusters.png)
+
+![EDNRB](./Plots/Kalucka_info_plots/Violinplot_EDNRB_Condition+NewClustering.png)
+
+## MSR1 v WNT2
+
+```{r MSR1vWNT2}
+
+FeaturePlot(Carlos, order = T, features = c(toupper(c("MSR1", "WNT2"))), ncol = 1, pt.size = 1.5, blend = T, blend.threshold = 0,cols =  c("white", "red", "blue"))
+
+FeaturePlot(Carlos, order = T, features = c(toupper(c("MSR1", "WNT2"))), ncol = 1, pt.size = 1.5, blend = T, blend.threshold = 0.5,cols =  c( rgb(0.075,0.075,0.075)  , "cyan", "magenta")) * DarkTheme()
+
+FeaturePlot(Carlos, split.by= "Condition", order = T, features = c(toupper(c("MSR1", "WNT2"))), ncol = 1, pt.size = 1.5, blend = T, blend.threshold = 0.5,cols =  c( rgb(0.075,0.075,0.075)  , "cyan", "magenta")) * DarkTheme()
+
+```

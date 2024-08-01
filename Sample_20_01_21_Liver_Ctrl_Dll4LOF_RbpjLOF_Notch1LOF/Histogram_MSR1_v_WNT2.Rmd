@@ -1,0 +1,234 @@
+---
+title: "Histogram MSR1 v WNT2"
+author: "Alvaro Regano"
+date: "28/09/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+```
+
+# About the analysis
+
+  The data was taken from the Liver 20-01-21 sample processed by Carlos Torroja. In brief, we want to find out if there is a unbalance in the arterio-venous differentiation of LOF cells in the 3 conditions (Dll4LOF, RbpjLOF and Notch1LOF). For that we have selected 2 markers, MSR1 and WNT2, the former a validated arterial marker and the latter a venous one.  
+
+  In the analysis we will first subset the samples in the 4 different Conditions (Control, Dll4KO, RbpjKO and Notch1KO) and then withing each conditions the samples will be further subset in terms of their expression rates following this criteria:
+  
+  no expression = MSR1 and WNT2<=0
+  
+  MSR1lo-noWNT2 = 0<MSR1<=2 and WNT2<=0
+  
+  MSR1hi-noWNT2 = MSR1>2 and WNT2<=0
+  
+  noMSR1-WNT2lo = MSR1<=0 and 0<WNT2<=2
+  
+  MSR1lo-WNT2lo = 0<MSR1<=2 and 0<WNT2<=2
+  
+  MSR1hi-WNT2lo = MSR1>2 and 0<WNT2<=2
+  
+  noMSR1-WNT2hi = MSR1<=0 and WNT2>2
+  
+  MSR1lo-WNT2hi = 0<MSR1<=2 and WNT2>2
+  
+  MSR1hi-WNT2hi = MSR1>2 and WNT2>2
+  
+# Objective
+
+  The goal is to find that if the LOF of various genes involved in the Notch pathway (Dll4, Rbpj and Notch1) cause any changes in the arterio-venous differentiation pattern in liver cells of adult mice 
+  
+# Analysis
+
+```{r library}
+library("Seurat")
+library("ggplot2")
+library("RColorBrewer")
+```
+
+```{r condition subsetting}
+
+  Carlos <- readRDS("SC.Analysis.SecondPass.RNA.Singlets.Endothelial.ManualClustering.seuratSC.Final.V4.rds")
+  Control <- subset(x = Carlos, subset = Condition == "Control")
+  Dll4KO <- subset(x = Carlos, subset = Condition == "Dll4KO")
+  RbpjKO <- subset(x = Carlos, subset = Condition == "RBPJKO")
+  Notch1KO <- subset(x = Carlos, subset = Condition == "NOTCH1KO")
+  
+  my_palette <- c(black="#000000", brewer.pal(9, "RdBu"))
+  
+```
+
+
+```{r subsets per condition: Control}
+
+  lo_lo <- subset(Control, subset = MSR1 <= 0 & WNT2 <= 0)
+  med_lo <- subset(Control, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 <= 0)
+  hi_lo <- subset(Control, subset = MSR1 > 2 & WNT2 <= 0)
+  
+  lo_med <- subset(Control, subset = MSR1 <= 0 & WNT2 > 0 & WNT2 <= 2)
+  med_med <- subset(Control, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 0 & WNT2 <= 2)
+  hi_med <- subset(Control, subset = MSR1 > 2 & WNT2 > 0 & WNT2 <= 2)
+  
+  lo_hi <- subset(Control, subset = MSR1 <= 0 & WNT2 > 0)
+  med_hi <- subset(Control, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 2)
+  hi_hi <- subset(Control, subset = MSR1 > 2 & WNT2 > 2)
+  
+  h0 <- ncol(lo_lo)
+  h1 <- ncol(hi_lo)
+  h2 <- ncol(med_lo)
+  h3 <- ncol(hi_med)
+  h4 <- ncol(med_med)/2
+  h5 <- ncol(hi_hi)
+  h6 <- ncol(med_med)/2
+  h7 <- ncol(med_hi)
+  h8 <- ncol(lo_med)
+  h9 <- ncol(lo_hi)
+  
+  
+  ncell_list_Control <- matrix(c(h0, h1, h2, h3, h4, h5, h6, h7, h8, h9), ncol = 1)
+  
+```
+
+
+```{r subsets per condition: Dll4KO}
+
+  lo_lo <- subset(Dll4KO, subset = MSR1 <= 0 & WNT2 <= 0)
+  med_lo <- subset(Dll4KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 <= 0)
+  #No cells found
+  #hi_lo <- subset(Dll4KO, subset = MSR1 > 2 & WNT2 <= 0)
+  hi_lo <- 0
+  
+  lo_med <- subset(Dll4KO, subset = MSR1 <= 0 & WNT2 > 0 & WNT2 <= 2)
+  med_med <- subset(Dll4KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 0 & WNT2 <= 2)
+  #No cells found
+  #hi_med <- subset(Dll4KO, subset = MSR1 > 2 & WNT2 > 0 & WNT2 <= 2)
+  hi_med <- 0
+  
+  lo_hi <- subset(Dll4KO, subset = MSR1 <= 0 & WNT2 > 0)
+  med_hi <- subset(Dll4KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 2)
+  #No cells found
+  #hi_hi <- subset(Dll4KO, subset = MSR1 > 2 & WNT2 > 2)
+  hi_hi <- 0
+  
+  h0 <- ncol(lo_lo)
+  h1 <- ncol(hi_lo)
+  h2 <- ncol(med_lo)
+  h3 <- ncol(hi_med)
+  h4 <- ncol(med_med)/2
+  h5 <- ncol(hi_hi)
+  h6 <- ncol(med_med)/2
+  h7 <- ncol(med_hi)
+  h8 <- ncol(lo_med)
+  h9 <- ncol(lo_hi)
+  
+  
+  ncell_list_Dll4KO <- matrix(c(h0, 0, h2, 0, h4, 0, h6, h7, h8, h9), ncol = 1)
+  
+```
+
+
+```{r subsets per condition: RbpjKO}
+
+  lo_lo <- subset(RbpjKO, subset = MSR1 <= 0 & WNT2 <= 0)
+  med_lo <- subset(RbpjKO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 <= 0)
+  hi_lo <- subset(RbpjKO, subset = MSR1 > 2 & WNT2 <= 0)
+  
+  lo_med <- subset(RbpjKO, subset = MSR1 <= 0 & WNT2 > 0 & WNT2 <= 2)
+  med_med <- subset(RbpjKO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 0 & WNT2 <= 2)
+  hi_med <- subset(RbpjKO, subset = MSR1 > 2 & WNT2 > 0 & WNT2 <= 2)
+  
+  lo_hi <- subset(RbpjKO, subset = MSR1 <= 0 & WNT2 > 0)
+  med_hi <- subset(RbpjKO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 2)
+  hi_hi <- subset(RbpjKO, subset = MSR1 > 2 & WNT2 > 2)
+  
+  h0 <- ncol(lo_lo)
+  h1 <- ncol(hi_lo)
+  h2 <- ncol(med_lo)
+  h3 <- ncol(hi_med)
+  h4 <- ncol(med_med)/2
+  h5 <- ncol(hi_hi)
+  h6 <- ncol(med_med)/2
+  h7 <- ncol(med_hi)
+  h8 <- ncol(lo_med)
+  h9 <- ncol(lo_hi)
+  
+  
+  ncell_list_RbpjKO <- matrix(c(h0, h1, h2, h3, h4, h5, h6, h7, h8, h9), ncol = 1)
+  
+
+```
+
+```{r subsets per condition: Notch1KO}
+
+  lo_lo <- subset(Notch1KO, subset = MSR1 <= 0 & WNT2 <= 0)
+  med_lo <- subset(Notch1KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 <= 0)
+  hi_lo <- subset(Notch1KO, subset = MSR1 > 2 & WNT2 <= 0)
+  
+  lo_med <- subset(Notch1KO, subset = MSR1 <= 0 & WNT2 > 0 & WNT2 <= 2)
+  med_med <- subset(Notch1KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 0 & WNT2 <= 2)
+  hi_med <- subset(Notch1KO, subset = MSR1 > 2 & WNT2 > 0 & WNT2 <= 2)
+  
+  lo_hi <- subset(Notch1KO, subset = MSR1 <= 0 & WNT2 > 0)
+  med_hi <- subset(Notch1KO, subset = MSR1 > 0 & MSR1 <= 2 & WNT2 > 2)
+  hi_hi <- subset(Notch1KO, subset = MSR1 > 2 & WNT2 > 2)
+  
+  h0 <- ncol(lo_lo)
+  h1 <- ncol(hi_lo)
+  h2 <- ncol(med_lo)
+  h3 <- ncol(hi_med)
+  h4 <- ncol(med_med)/2
+  h5 <- ncol(hi_hi)
+  h6 <- ncol(med_med)/2
+  h7 <- ncol(med_hi)
+  h8 <- ncol(lo_med)
+  h9 <- ncol(lo_hi)
+  
+  
+  ncell_list_Notch1KO <- matrix(c(h0, h1, h2, h3, h4, h5, h6, h7, h8, h9), ncol = 1)
+  
+```
+
+```{r DittoBarPlot}
+
+  ncell_list_Conditions <- matrix(c("Control" = ncell_list_Control, "Dll4KO" = ncell_list_Dll4KO, "RbpjKO" = ncell_list_RbpjKO, "Notch1KO" = ncell_list_Notch1KO), ncol = 4,
+                                  dimnames = list(c("no expr", "MSR1hi-noWNT2", "MSR1lo-noWNT2", "MSR1hi-WNT2lo", "MSR1lo-WNT2lo", "MSR1hi-WNT2hi", "MSR1lo-WNT2lo", "MSR1lo-WNT2hi", "noMSR1-WNT2lo", "noMSR1-WNT2hi"),
+                                               c("Control", "Dll4KO", "RbpjKO", "Notch1KO")))
+
+ncell_list_Conditions
+
+  p1 <- barplot(ncell_list_Conditions, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", legend.text = c("no expr", "MSR1hi-noWNT2", "MSR1lo-noWNT2", "MSR1hi-WNT2lo", "MSR1lo-WNT2lo", "MSR1hi-WNT2hi", "MSR1lo-WNT2lo", "MSR1lo-WNT2hi", "noMSR1-WNT2lo", "noMSR1-WNT2hi"), args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1vWNT2")
+
+```
+
+```{r DittoBarPlot Normalized}
+
+cells_per_condition <- colSums(ncell_list_Conditions)
+
+cells_per_condition
+
+ncell_list_Conditions_norm <- matrix(c(100*ncell_list_Conditions[1:10]/cells_per_condition[1], 100*ncell_list_Conditions[11:20]/cells_per_condition[2], 100*ncell_list_Conditions[21:30]/cells_per_condition[3], 100*ncell_list_Conditions[31:40]/cells_per_condition[4]), ncol = 4, 
+                                     dimnames = list(c("no expr", "MSR1hi-noWNT2", "MSR1lo-noWNT2", "MSR1hi-WNT2lo", "MSR1lo-WNT2lo", "MSR1hi-WNT2hi", "MSR1lo-WNT2lo", "MSR1lo-WNT2hi", "noMSR1-WNT2lo", "noMSR1-WNT2hi"),
+                                                     c("Control=1069", "Dll4KO=1161", "RbpjKO=1228", "Notch1KO=1239")))
+
+ncell_list_Conditions_norm
+
+p2 <- barplot(ncell_list_Conditions_norm, xlim = c(0.3, 5.5), col = my_palette, axisnames = T, ylab = "Cell Count", xlab = "Condition", 
+              legend.text = c("no expr", "MSR1hi-noWNT2", "MSR1lo-noWNT2", "MSR1hi-WNT2lo", "MSR1lo-WNT2lo", "MSR1hi-WNT2hi", "MSR1lo-WNT2lo", "MSR1lo-WNT2hi", "noMSR1-WNT2lo", "noMSR1-WNT2hi"), 
+              args.legend = list(x = "right", inset = c(0, 0)), main = "MSR1vWNT2 Normalized")
+
+```
+
+# Conclusion
+
+  Control cells show a clearly proportional arterio-venous differentiation. However, the other conditions lose that pattern, specially Dll4KO and Notch1KO.
+
+
+
+

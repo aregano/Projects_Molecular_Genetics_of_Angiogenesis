@@ -1,0 +1,248 @@
+---
+title: "Liver_2weeks_Overview"
+author: "Alvaro Regano"
+date: "28/11/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+#knitr::opts_knit$set(root.dir= normalizePath('..'))
+#knitr::opts_chunk$set(error = FALSE)
+options(width = 9000)
+
+```
+
+```{r library, echo=FALSE}
+library(Seurat)
+library(ggplot2)
+library("knitr")
+library("rmarkdown")
+library("yaml")
+library("patchwork")
+```
+
+# Liver 2 week deletion Overview
+
+## Carlos Original UMAP and Clusters
+
+I will make a quick overview of the quality of the integration of the Liver 2 week deletion plot. 
+First I will plot the starting UMAP plot we got from Carlos of Liver 20Jan21
+
+![Carlos_UMAP](../Plots/Rui_Comparisons/UMAP_Carlos_settings_res_0.35.png)
+
+![Carlos_UMAP_New_Clustering](../Plots/Rui_Comparisons/UMAP_Carlos_NewClustering.png)
+
+## Liver Integration 2 weeks. 7 dimensions
+
+Now moving onto the plots I produced with the integrated samples. Lets start with the 7 dimensions plot. AV zonation takes the croissant shape, meaning the clear spread across the plot is lost.
+
+I also include Carlos' Clustering done with the previous 4 conditions, so you can look at the spread.
+
+```{r UMAPdim7, fig.asp=0.8, echo=FALSE}
+
+Liver <- readRDS("~/PhD/Bioinformatics/Liver_MacarenaFC/Liver_2weeks_deletion/rds/Liver_2wdeletion.v2.ECs.rds")
+
+Liver <- FindNeighbors(Liver, dims = 1:7)
+Liver <- FindClusters(Liver, resolution = 0.25)
+Liver <- RunUMAP(Liver, dims = 1:7)
+
+p1 <- DimPlot(Liver, label = T, pt.size = 2, label.size = 12) + scale_x_reverse()
+p1
+
+p2 <- DimPlot(Liver, label = T, group.by = "NewClustering",pt.size = 2, label.size = 12) + scale_x_reverse()
+p2
+
+```
+
+```{r UMAPdim7split, fig.asp=0.3, echo=FALSE}
+
+p3 <- DimPlot(Liver, split.by = "Condition", label = T) + scale_x_reverse()
+p3
+
+```
+
+```{r UMAPdim7split2, fig.asp=0.6, echo=FALSE}
+
+p4 <- DimPlot(Liver, group.by = "NewClustering", split.by = "Condition", label = T) + scale_x_reverse()
+p4
+
+```
+
+Moving onto the target genes.
+
+
+
+```{r geneUMAP7dim, fig.asp= 2.5, echo=FALSE}
+genes <- list(c("ODC1", "KCNE3", "MKI67", "WNT2", "MSR1", "LTBP4", "RSPO3", "GJA5", "CDKN1A", "STMN1"))
+genes <- as.data.frame(genes)
+
+# Multiplot Function
+
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  require(grid)
+  
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  if (is.null(layout)) {
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    for (i in 1:numPlots) {
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+#  Script
+
+myplots <- vector('list', nrow(genes))
+
+myplots_main <- vector('list', nrow(genes))
+
+myplots_condition <- vector('list', nrow(genes))
+
+for (i in 1:nrow(genes)) {
+  
+  p1 <- FeaturePlot(Liver, features = genes[i, 1], split.by = "Condition", combine = F)
+  
+  p2 <- lapply(X = p1, FUN = function(p) p + scale_x_reverse() + NoLegend() + NoAxes())
+  
+  p3 <- Reduce( `+`, p2 )+patchwork::plot_layout( ncol = 6 )
+ 
+  myplots[[i]] <- local({
+    i <- i
+    p3
+  })
+              
+  
+}
+
+p4 <- CombinePlots(plots = myplots, ncol = 1)
+p4
+
+```
+
+## Liver Integration 2 weeks. 6 dimensions
+
+I saw that with 6 dimensions I was able to keep the AV zonation, however the plot looked a bit messier
+
+I also include Carlos' Clustering done with the previous 4 conditions, so you can look at the spread.
+
+```{r UMAP6dim, fig.asp=0.8, echo=FALSE}
+
+Liver <- FindNeighbors(Liver, dims = 1:6)
+Liver <- FindClusters(Liver, resolution = 0.26)
+Liver <- RunUMAP(Liver, dims = 1:6)
+
+p1 <- DimPlot(Liver, label = T, pt.size = 2, label.size = 12) + scale_x_reverse()
+p1
+
+p2 <- DimPlot(Liver, label = T, group.by = "NewClustering",pt.size = 2, label.size = 12) + scale_x_reverse()
+p2
+
+```
+
+```{r UMAP6dimsplit, fig.asp= 0.3, echo=FALSE}
+
+p3 <- DimPlot(Liver, split.by = "Condition", label = T) + scale_x_reverse()
+p3
+
+
+```
+
+```{r UMAPdim6split2, fig.asp=0.6, echo=FALSE}
+
+p4 <- DimPlot(Liver, group.by = "NewClustering", split.by = "Condition", label = T) + scale_x_reverse()
+p4
+
+```
+
+Moving onto the target genes.
+
+```{r geneUMAP6dim, fig.asp=2.5 ,echo=FALSE}
+
+genes <- list(c("ODC1", "KCNE3", "MKI67", "WNT2", "MSR1", "LTBP4", "RSPO3", "GJA5", "CDKN1A", "STMN1"))
+genes <- as.data.frame(genes)
+
+# Multiplot Function
+
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  require(grid)
+  
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  if (is.null(layout)) {
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    for (i in 1:numPlots) {
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+#  Script
+
+myplots <- vector('list', nrow(genes))
+
+myplots_main <- vector('list', nrow(genes))
+
+myplots_condition <- vector('list', nrow(genes))
+
+for (i in 1:nrow(genes)) {
+  
+  p1 <- FeaturePlot(Liver, features = genes[i, 1], split.by = "Condition", combine = F)
+  
+  p2 <- lapply(X = p1, FUN = function(p) p + scale_x_reverse() + NoLegend() + NoAxes())
+  
+  p3 <- Reduce( `+`, p2 )+patchwork::plot_layout( ncol = 6 )
+ 
+  myplots[[i]] <- local({
+    i <- i
+    p3
+  })
+              
+  
+}
+
+p4 <- CombinePlots(plots = myplots, ncol = 1)
+p4
+
+
+
+```

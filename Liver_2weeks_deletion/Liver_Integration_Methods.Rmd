@@ -1,0 +1,282 @@
+---
+title: "Liver_Integration_Methods"
+author: "Alvaro Regano"
+date: "02/12/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+#knitr::opts_knit$set(root.dir= normalizePath('..'))
+#knitr::opts_chunk$set(error = FALSE)
+options(width = 9000)
+
+```
+
+```{r library, echo=FALSE}
+library(Seurat)
+library(ggplot2)
+library("dplyr")
+library("knitr")
+library("rmarkdown")
+library("yaml")
+library("patchwork")
+```
+
+# Liver Integration Methods
+
+# Objective
+
+I will look into different integration methods to asses batch effects between the liver 20Jan21 sample and the two Liver 2Jul21 samples
+
+# Analysis
+
+## Original without any special integration
+
+First This is how the UMAP looks without any kind of Integration
+
+```{r UMAPwoInt, fig.asp=0.8, echo=FALSE}
+
+LiverwoInt <- readRDS("../rds/Liver_2wdeletion.v4.ECs.rds")
+
+
+p1 <- DimPlot(LiverwoInt, reduction = "umap.6dim", label = T, pt.size = 2, label.size = 12)
+p1
+
+p2 <- DimPlot(LiverwoInt, label = T, reduction = "umap.6dim", group.by = "NewClustering",pt.size = 2, label.size = 12)
+p2
+
+```
+
+```{r UMAPwoInt2, fig.height= 10, fig.width=30, echo=FALSE}
+
+p3 <- DimPlot(LiverwoInt, reduction = "umap.6dim", label = T, pt.size = 2, split.by = "Condition", group.by = "NewClustering")
+p3
+
+```
+
+Dll4/Myc KO and the triple mutant look a bit further and that can be due to the lower sequencing depth these two conditions have
+
+```{r UMAPwoInt3, fig.height= 10, fig.width=30, echo=FALSE}
+
+p4 <- FeaturePlot(LiverwoInt, features = c("nCount_RNA", "nFeature_RNA"), pt.size = 2)
+p4
+
+```
+
+You can clearly  see that there is a pattern of higher expressing cells going to the right, and these two conditions cluster to the left. So there may be some technical biases to adress
+
+## Liver Integration 2 weeks. Adding Ctrl 4 days to look for batch effects
+
+A first Control analysis will be to add the Control(4d) cells into this whole dataset and see how they cluster, if the go on top of Ctrl 2 week cells or not.
+
+```{r Ctrl4d, fig.asp=0.8, echo=FALSE}
+
+Liver_Ctrl4d <- readRDS("../rds/Liver_Ctrl4d.rds")
+
+Liver <- merge(LiverwoInt, y = Liver_Ctrl4d,
+                          project = "Liver_Control") %>%
+  Seurat::NormalizeData(verbose = T, normalization.method = "LogNormalize", scale.factor = 10000) %>%
+  FindVariableFeatures(selection.method = "vst", nfeatures = 2000)
+
+# saveRDS(Liver, "rds/Liver_Ctrl_merge.ECs.rds")
+
+all.genes <- rownames(Liver)
+
+Liver <- ScaleData(Liver, verbose = TRUE,
+                              features= rownames(Liver) ) %>% 
+  RunPCA(pc.genes = Liver@var.genes, npcs = 30, verbose = TRUE)
+
+Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = 1/7, n.trees = 50, k.param = 50)
+
+Liver <- FindClusters(Liver, resolution = 0.26)
+
+Liver <- RunUMAP(Liver, dims = 1:6, min.dist = 0.2, n.neighbors = 50, verbose = F)
+
+p5 <- DimPlot(Liver, group.by = "NewClustering", label = T, pt.size = 2, label.size = 12)+ scale_x_reverse()+ scale_y_reverse()
+
+p6 <- FeaturePlot(Liver, features = "nCount_RNA", pt.size = 2)+ scale_x_reverse()+ scale_y_reverse()
+
+p5
+p6
+
+```
+
+Now if we look at how the different Conditions are distributed, we can see that Control(4d) does not overlap with Control 2 weeks. We have a batch effect here, mainly because of the sequencing depth issues.
+
+```{r Ctrl4d2, fig.height= 10, fig.width=30, echo=FALSE}
+
+p7 <- DimPlot(Liver, split.by = "Condition", group.by = "NewClustering", label = T, pt.size = 2)+ scale_x_reverse()+ scale_y_reverse()
+p7
+
+```
+
+## Integrating by Conditions
+
+First I will try doing the integration considering all 7 conditions. I will use a standard Seurat method for that.
+
+
+```{r UMAPCondSeuratInt, fig.asp=0.8, echo=FALSE}
+
+condition.list <- SplitObject(Liver, split.by = "Condition")
+
+condition.list <- lapply(X = condition.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = condition.list)
+
+# Perform Integration
+
+condition.anchors <- FindIntegrationAnchors(object.list = condition.list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+condition.combined <- IntegrateData(anchorset = condition.anchors)
+
+
+# Perform Integrated Analysis
+
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+DefaultAssay(condition.combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+condition.combined <- ScaleData(condition.combined, verbose = FALSE)
+condition.combined <- RunPCA(condition.combined, npcs = 30, verbose = FALSE)
+condition.combined <- RunUMAP(condition.combined, reduction = "pca", dims = 1:6, verbose = F)
+condition.combined <- FindNeighbors(condition.combined, reduction = "pca", dims = 1:6)
+condition.combined <- FindClusters(condition.combined, resolution = 0.3)
+
+# Visualization
+p8 <- DimPlot(condition.combined, reduction = "umap", split.by = "Condition", pt.size = 2)
+p9 <- DimPlot(condition.combined, reduction = "umap", label = TRUE, repel = TRUE, group.by = "NewClustering", split.by = "Condition", pt.size = 2)
+
+p10 <- FeaturePlot(condition.combined, features = c("nCount_RNA", "nFeature_RNA"))
+p10
+
+```
+
+```{r plotCond, fig.height=5, fig.width=35,echo=FALSE}
+
+p8
+
+```
+
+```{r plotCond2, fig.height=10, fig.width=35,echo=FALSE}
+
+p9
+
+```
+
+ The Integration by Condition is way too harsh. Doing it by Condition is not the way to go, I will have to do it by Seq Depth
+ 
+ That means that I will split this big dataset into two, the old sequencing with high depth, and new sequencing with low depth.
+ 
+ For that I will create a new category "SeqDepth" and split this dataset into "High" and "Low"
+ 
+
+
+## Integrating by Sequencing Depth
+
+I created a new category "SeqDepth" and split this dataset into "High" and "Low". Then I ran an Integration in terms of those two categories
+
+```{r UMAPCondSeuratInt2, fig.asp=0.8, echo=FALSE}
+
+Liver@meta.data$Condition <- as.factor(Liver@meta.data$Condition)
+
+High <- subset(Liver, subset = Condition == "Control" | Condition == "Dll4KO" | Condition == "NOTCH1KO" | Condition == "RBPJKO" )
+
+High <- SetIdent(High, value = "High")
+
+Low <- subset(Liver, subset = Condition == "Control(4d)" | Condition == "Dll4/MycKO" | Condition == "Jag1/Jag2/Dll1KO(2w)" )
+
+Low <- SetIdent(Low, value = "Low")
+
+Liver <- merge(High, y = Low,
+               project = "Liver_Control")
+
+Liver@meta.data$SeqDepth <- Liver@active.ident
+
+# saveRDS(Liver, "rds/Liver2w.Ctrl4d.integration.rds")
+
+condition.list <- SplitObject(Liver, split.by = "SeqDepth")
+
+condition.list <- lapply(X = condition.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = condition.list)
+
+# Perform Integration
+
+condition.anchors <- FindIntegrationAnchors(object.list = condition.list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+condition.combined <- IntegrateData(anchorset = condition.anchors)
+
+
+# Perform Integrated Analysis
+
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+DefaultAssay(condition.combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+condition.combined <- ScaleData(condition.combined, verbose = FALSE)
+condition.combined <- RunPCA(condition.combined, npcs = 30, verbose = FALSE)
+condition.combined <- RunUMAP(condition.combined, reduction = "pca", dims = 1:6, verbose = F)
+condition.combined <- FindNeighbors(condition.combined, dims = 1:6, prune.SNN = 1/7, n.trees = 50, k.param = 50)
+condition.combined <- FindClusters(condition.combined, resolution = 0.26)
+
+# Visualization
+p11 <- DimPlot(condition.combined, label = T, pt.size = 2, label.size = 8) + scale_x_reverse()+ scale_y_reverse()
+p12 <- DimPlot(condition.combined, label = T, group.by = "NewClustering", pt.size = 2, label.size = 8) + scale_x_reverse()+ scale_y_reverse()
+
+p13 <- DimPlot(condition.combined, reduction = "umap", split.by = "Condition", pt.size = 1.5, label = T)+ scale_x_reverse()+ scale_y_reverse()
+p14 <- DimPlot(condition.combined, reduction = "umap", label = TRUE, repel = TRUE, group.by = "NewClustering", split.by = "Condition", pt.size = 1.5)+ scale_x_reverse()+ scale_y_reverse()
+
+p15 <- FeaturePlot(condition.combined, features = "nCount_RNA", pt.size = 2)+ scale_x_reverse()+ scale_y_reverse()
+
+p11
+
+p12
+
+p15
+
+```
+
+It works much much better this way, however we lose again AV zonation
+
+
+```{r plotSeqdepth, fig.height=10, fig.width=35,echo=FALSE}
+
+p13
+p14
+
+```
+
+Now that we see that this is the strategy to go, I will do the Integration in terms of Sequencing Depth but taking out the Control(4d) group
+
+# Conclusion
+
+Integration must be done in terms of Sequencing Depth, not Condition, as it better addresses batch effects
+
+
+```{r session, ,echo=FALSE}
+
+sessionInfo()
+
+```
+

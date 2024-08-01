@@ -1,0 +1,270 @@
+---
+title: "DefClustering_Liver_20_01_21"
+author: "Alvaro Regano"
+date: "27/10/2021"
+output:
+    BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+```
+
+# About the analysis
+
+The data was taken from the Liver 20-01-21 sample processed by Carlos Torroja up to the QC and feature selection step. From here I performed DImensionality Reduction to find the optimal way of Clustering the data. We set up for 19 Dimensions at a 0.9 resolution. From there we defined different clusters and performed subclustering on specific plots, so as to give a biological understanding of the dataset.
+
+# Objective
+
+The goal is to assign a proper clustering to the LLiver 20_01_21 sample that can give a biological understanding of the sample and be used in future datasets.
+
+# Analysis
+
+```{r library}
+library("Seurat")
+library("ggplot2")
+library("RColorBrewer")
+```
+
+# Dimensionality Reduction. 19 Dimensions resolution 0.9
+
+Now we load Carlos' rds and perform Dimensionality reduction to get the desired 19 Dimensions at 0.9 resolution, and store it on the metadata
+
+```{r dimensionality reduction}
+
+Liver <- readRDS("./Carlos_rds/SC.Analysis.SecondPass.RNA.Singlets.Endothelial.ManualClustering.seuratSC.Final.rds")
+
+Liver = FindNeighbors(Liver, dims = 1:19)
+
+Liver = FindClusters(Liver, resolution = 0.9)
+
+Liver = RunUMAP(Liver, dims = 1:19)
+
+DimPlot(Liver, pt.size = 1.5, label = T)
+
+DimPlot(Liver, pt.size = 1.5, split.by = "Condition")
+
+Liver@meta.data$Dim19_res0.9 <- Liver@active.ident
+
+```
+
+# Initial cluster assignment
+
+We now give a staerting labelling of the different clusters
+
+```{r initial cluster assignment}
+
+cluster.ids <- c("Activated Capillary Venous", "Quiescent Capillary", "Capillary Arterial", "Capillary Venous", "Activated Dll4KO Venous/Tip Cells", "Activated Dll4KO Arterial ECs", "Proliferating", "Notch1KO specific", "Malat1Neg Weak ECs", "Veins", "Big Arteries")
+
+names(cluster.ids) <- levels(Liver)
+
+Liver <- RenameIdents(Liver, cluster.ids)
+
+DimPlot(Liver, pt.size = 1.5, label = T)
+
+```
+
+
+# Veins Subdivision
+
+  We want to subdivide the Veins cluster into Big Veins and Veins, as there is a clear difference when using RSPO3 as a marker gene. For that we will subset that cluster exclusively for RSPO3 < 3 expression, getting the Big Veins cluster separated from Veins.
+
+```{r veins subdivision}
+
+Veins <- subset(Liver, idents = "Veins")
+
+FeaturePlot(Veins, features = "RSPO3", pt.size = 1.5)
+
+max(Veins@assays$RNA@data["RSPO3",])
+
+Big_Veins <- subset(Veins, subset = `RSPO3` > 3)
+
+cells.big.veins <- Cells(Big_Veins)
+
+Idents(Liver, cells = cells.big.veins) <- "Big Veins"
+
+DimPlot(Liver, pt.size = 1.5, label = T)
+
+Liver@meta.data$NewLabels <- Liver@active.ident
+
+```
+
+
+# Separating Proliferating into G2M and S phase cells
+
+Another cluster to subdivide is the Proliferating cluster. For that I will use Cell cycle scoring on the whole dataset, the subdivide only taking the Proliferating cluster, and there separate both clusters in G2M v S phase
+
+```{r Cell cycle}
+
+#Database available in the Seurat webpage. Link: https://www.dropbox.com/s/3dby3bjsaf5arrw/cell_cycle_vignette_files.zip?dl=1
+
+exp.mat <- read.table(file = "../Databases/nestorawa_forcellcycle_expressionMatrix.txt", header = TRUE,
+                      as.is = TRUE, row.names = 1)
+
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+Liver <- CellCycleScoring(Liver, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+
+DimPlot(Liver, pt.size = 1.5)
+
+Liver@meta.data$Cell_cycle <- Liver@active.ident
+
+# Going back to the main labelling
+
+Liver <- SetIdent(Liver, value = Liver@meta.data$NewLabels)
+
+Proliferating <- subset(Liver, idents = "Proliferating")
+
+cell.proliferating <- Cells(Proliferating)
+
+Proliferating <- SetIdent(Proliferating, value = "Cell_cycle")
+
+DimPlot(Proliferating)
+
+G2M <- subset(Proliferating, idents = "G2M")
+
+# There is just one cell on this cluster belonging to G1, we will include it in S phase so as to make everything more elegant
+
+S <- subset(Proliferating, idents = c("S","G1"))
+
+g2m.cells <- Cells(G2M)
+s.cells <- Cells(S)
+
+Idents(Liver, cells = g2m.cells) <- "G2M Phase"
+
+Idents(Liver, cells = s.cells) <- "S Phase"
+
+DimPlot(Liver, pt.size = 1.5, label = T)
+
+Liver@meta.data$NewLabels <- Liver@active.ident
+
+```
+
+
+# Separating Big Arteries Control v Mutants
+
+The Big Arteries clusters undergoes a big separation throughout the UMAP, and we have found that it correlates with the split in Conditions, where Control Cells cluster on the lef, and the mutants mostly on the right. I will then subcluster the Big Arteries cluster based on Control v Mutants
+
+```{r Big Arteries}
+
+Liver <- SetIdent(Liver, value = "NewLabels")
+
+Big_Arteries <- subset(Liver, idents = "Big Arteries")
+
+Big_Arteries <- SetIdent(Big_Arteries, value = "Condition")
+
+control.big.arteries <- CellsByIdentities(Big_Arteries, idents = "Control")
+
+Control_BA <- subset(Big_Arteries, idents = "Control")
+
+cells.control.big.arteries <- Cells(Control_BA)
+
+Idents(Liver, cells = cells.control.big.arteries) <- "Arteries Control"
+
+
+DimPlot(Liver, pt.size = 1.5, label = T)
+
+
+cluster.ids.v2 <- c("Arteries", "S Phase", "G2M Phase", "Big Veins", "Activated Capillary Venous", "Quiescent Capillary", "Capillary Arterial", "Capillary Venous", "Activated Dll4KO Venous/Tip Cells", "Activated Dll4KO Arterial ECs", "Notch1KO specific", "Malat1Neg Weak ECs", "Veins", "Arteries Mutant")
+
+names(cluster.ids.v2) <- levels(Liver)
+
+Liver <- RenameIdents(Liver, cluster.ids.v2)
+
+DimPlot(Liver, pt.size = 1.5, label = T)
+
+```
+
+
+# Take out Intermediate Veins from Capillary Arterial
+
+The Capillary Arterial cluster has some WNT2 high and MSR1 low cells that should better be subclustered independently, as an Intermediary Vein CLuster (Int Vein). I will do so by subsetting this cluster taking MSR1 < 1 expression and WNt2 > 0
+
+```{r Int Veins}
+
+
+cap_arterial <- subset(Liver, idents = "Capillary Arterial")
+cells.cap.arterial <- Cells(cap_arterial)
+DimPlot(cap_arterial, pt.size = 1.5)
+
+wnt2 <- FeaturePlot(cap_arterial, features = "WNT2", pt.size = 1.5)
+msr1 <- FeaturePlot(cap_arterial, features = "MSR1", pt.size = 1.5)
+
+wnt2+msr1
+
+max(cap_arterial@assays$RNA@data["WNT2",])
+max(cap_arterial@assays$RNA@data["MSR1",])
+
+#max gene expression for both markers doesn`t exceed 4, so we can set an early threshold
+
+int_veins <- subset(cap_arterial, subset = WNT2 > 0 & MSR1 < 1, slot = "data")
+
+cells.int.veins <- Cells(int_veins)
+
+# I have taken 85 cells this way from the cluster comprising of 488 cells
+
+Idents(cap_arterial, cells = cells.int.veins) <- "Int Veins"
+DimPlot(cap_arterial, pt.size = 1.5)
+
+# You can also see that Int veins cluster to the right, which is close to the other venous clusters from the main plot
+
+Idents(Liver, cells = cells.int.veins) <- "Int Veins"
+
+Liver@meta.data$FinalClustering <- Liver@active.ident
+
+DimPlot(Liver, group.by = "FinalClustering",pt.size = 1.5, label = T)
+
+
+```
+
+
+# Ordering Clusters and adding a good color palette
+
+Now that we have all clusters, I will order them, and give it a customized color palette that makes it more intuitive to follow.
+
+```{r ordering and color palette}
+
+# Change order of clusters
+
+
+levels(Liver)
+
+levels(Liver) <- c("Arteries", "Arteries Mutant", "Capillary Arterial", "Activated Dll4KO Arterial ECs", "Quiescent Capillary", "Activated Dll4KO Venous/Tip Cells", "Activated Capillary Venous", "Int Veins", "Capillary Venous", "Veins", "Big Veins", "Malat1Neg Weak ECs", "Notch1KO specific", "G2M Phase", "S Phase")
+
+DimPlot(Liver, label = T, pt.size = 1.5)
+
+Liver@meta.data$DefClustering <- Liver@active.ident
+
+# Palette for Macarena's and Rui's editing, made for the FinalClustering setting
+# Order of clusters: Arteries, Arteries Mutant, Capillary Arterial, Activated Dll4KO Arterial ECs, Quiescent Capillary, 
+# Activated Dll4KO Venous/Tip cells, Activated Capillary Venous, Capillary Venous"Veins", "Big Veins", "Malat1Neg Weak ECs", "Notch1KO specific", "G2M phase", "S phase"
+
+my_palette_Rui_colors <- c("#FC0808", "#E95A74", "#F24CF2", "#C1B80C", "#F4A753","#A80519", "#45FF8E", "#2EFFFC", "#50B6EF", "#00A79D", "#0E47D8", 
+                           "#880088", "#008800", "#E28CF4", "#A90DFC")
+
+p1 <- DimPlot(Liver, group.by = "DefClustering", cols = my_palette_Rui_colors, pt.size = 1.5) + ggtitle("DefClustering") + NoAxes()
+
+p2 <- DimPlot(Liver, group.by = "DefClustering", cols = my_palette_Rui_colors, pt.size = 1.5, split.by = "Condition") + NoAxes() + ggtitle(NULL) + NoLegend() + theme(plot.title = element_text(hjust = 0.5))
+
+p1/p2
+
+# saveRDS(Liver, "Liver20_01_21.DefClustering.Alvaro.rds")
+
+```
+
+
+
+
+# Conclusion
+
+The UMAP has been first automatically clustered with a following subclustering done manually. Now said clusters have been given an identity
+
+

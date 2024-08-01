@@ -1,0 +1,152 @@
+---
+title: "Liver20Jan21_presentacion_Macarena"
+author: "Alvaro Regano"
+date: "17/12/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+#knitr::opts_knit$set(root.dir= normalizePath('..'))
+#knitr::opts_chunk$set(error = FALSE)
+options(width = 9000)
+
+```
+
+
+```{r library, echo=FALSE}
+library(Seurat)
+library(ggplot2)
+library("knitr")
+library("rmarkdown")
+library("yaml")
+library("patchwork")
+library("dittoSeq")
+library("magick")
+```
+
+# Objective
+
+I will produce some plots Macarena asked me for the presentation this next wednesday.
+
+
+##	Umap total que aparezcan los cluster
+
+```{r carlos, fig.asp=0.8, echo=FALSE}
+
+my_palette_Rui_colors <- c("#E95A74", "#50B6EF", "#45FF8E", "#F4A753", "#A80519", "#880088", "#E28CF4", "#C1B80C","#FC0808",  "#0E47D8")
+
+Liver <- readRDS("../rds/SC.Analysis.SecondPass.RNA.Singlets.Endothelial.ManualClustering.seuratSC.Final.V4.rds")
+
+DimPlot(Liver, pt.size = 2, label = T, label.size = 8, cols = my_palette_Rui_colors)+ NoAxes() + NoLegend()
+
+
+```
+
+```{r carlosa, fig.asp=0.8, echo=FALSE}
+
+DimPlot(Liver, pt.size = 2, cols = my_palette_Rui_colors)+ NoAxes()
+
+
+```
+
+
+## Umap total que aparezcan identificados por condiciones
+
+```{r carlos2, fig.asp=0.8, echo=FALSE}
+
+DimPlot(Liver, group.by = "Condition", pt.size = 2, label.size = 8)+ NoAxes()
+
+
+```
+
+
+```{r carlos3, fig.height=5, fig.width=20, echo=FALSE}
+
+DimPlot(Liver, split.by = "Condition", pt.size = 1.2, cols = my_palette_Rui_colors)+ NoAxes()
+```
+
+```{r carlos4, fig.asp=0.8, echo=FALSE}
+
+DimPlot(Liver, group.by = "Condition", pt.size = 2, label = T, label.size = 8, repel = T)+ NoAxes()+ NoLegend()
+
+```
+
+## Features Plots de las 4 condiciones y separadas en diferentes.
+
+
+```{r f, fig.width=20, fig.height= 56, echo=FALSE}
+
+genes <- list(c("ODC1", "KCNE3", "MKI67", "WNT2", "MSR1", "LTBP4", "RSPO3", "GJA5", "CDKN1A", "STMN1", "VEGFA", "ESM1", "HES1", "MYC"))
+genes <- as.data.frame(genes)
+
+
+#  Script
+
+myplots <- vector('list', nrow(genes))
+
+
+for (i in 1:nrow(genes)) {
+  
+  p21 <- FeaturePlot(Liver, features = genes[i, 1], combine = F, pt.size = 1.5)
+
+  p22 <- FeaturePlot(Liver, split.by = "Condition", features = genes[i, 1], combine = F, pt.size = 1.5)
+
+  p21 <- lapply(X = p21, FUN = function(p) p + NoLegend() + NoAxes())
+
+  p22 <- lapply(X = p22, FUN = function(p) p + NoLegend() + NoAxes())
+
+  p21 <- Reduce( `+`, p21 )+patchwork::plot_layout( ncol = 1 )
+
+  p22 <- Reduce( `+`, p22 )+patchwork::plot_layout( ncol = 4 )
+
+  p23 <- list(p21, p22)
+
+
+  design <- c(patchwork::area(1, 1, 1, 1), patchwork::area(1, 2, 1, 5))
+
+  p24 <- Reduce( `+`,  p23)+patchwork::plot_layout(design = design)
+
+  
+  myplots[[i]] <- local({
+    i <- i
+    p24
+  })
+  
+  
+}
+
+p25 <- patchwork::wrap_plots(myplots, ncol = 1)
+
+#myplots[1:nrow(genes)] + patchwork::plot_layout(byrow = T, widths = 25, heights = 5)
+p25
+
+
+# p25 <- CombinePlots(plots = myplots, ncol = 1)
+# p25
+
+```
+
+
+##	Barplot con número células por cluster.
+
+```{r b, fig.height=10, fig.width=8, echo=FALSE}
+
+dittoBarPlot(Liver, var = "NewClustering", group.by = "Condition", color.panel = my_palette_Rui_colors)
+
+```
+
+
+```{r barplot, fig.height=10, fig.width=4, echo=FALSE}
+
+dittoBarPlot(Liver, var = "NewClustering", group.by = "orig.ident", scale = "count", color.panel = my_palette_Rui_colors)
+
+```

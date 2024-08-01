@@ -1,0 +1,538 @@
+---
+title: "Liver_Different_Clustering"
+author: "Alvaro Regano"
+date: "16/12/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+#knitr::opts_knit$set(root.dir= normalizePath('..'))
+#knitr::opts_chunk$set(error = FALSE)
+options(width = 9000)
+
+```
+
+
+
+```{r library, echo=FALSE}
+library(Seurat)
+library(ggplot2)
+library("knitr")
+library("rmarkdown")
+library("yaml")
+library("patchwork")
+library(MASS)
+reticulate::import("pandas")
+```
+# Objective
+
+Here I will use different approaches of clustering so we can see how differently the algorithm is applied on the UMAP
+
+# Analysis
+
+First I will produce the UMAP I will be working with throughout the whole report. Also I will compare it with the clustering done previously by Carlos
+
+
+```{r UMAPdim7, fig.asp=0.8, echo=FALSE}
+
+Liver <- readRDS("../rds/Liver_2wdeletion.v4.ECs.rds")
+
+my_palette_Rui_colors <- c("#E95A74", "#50B6EF", "#45FF8E", "#F4A753", "#A80519", "#880088", "#E28CF4", "#C1B80C","#FC0808",  "#0E47D8")
+
+Liver <- NormalizeData(Liver, 
+                                normalization.method = "LogNormalize",
+                                scale.factor = 10000)
+
+# Identification of highly variable features (feature selection)
+
+Liver <- FindVariableFeatures(Liver, selection.method = "vst", nfeatures = 2500)
+
+all.genes <- rownames(Liver)
+
+Liver <- ScaleData(Liver, features = all.genes)
+
+Liver <- RunPCA(Liver, features = VariableFeatures(object = Liver))
+Liver <- RunUMAP(Liver, dims = 1:6, min.dist = 0.2, n.neighbors = 100, seed.use = 123456)
+Liver <- FindNeighbors(Liver, dims = 1:6, verbose = F)
+Liver <- FindClusters(Liver, resolution = 0.26, verbose = F)
+
+p2 <- DimPlot(Liver, label = T, pt.size = 2, label.size = 8)
+
+p2
+
+p4 <- DimPlot(Liver, label = T, group.by = "NewClustering",pt.size = 2, label.size = 8, cols = my_palette_Rui_colors)
+p4
+
+
+```
+
+## FindClusters
+
+There are two functions that control the clustering, one is FindClusters and the other FindNeighbors. I will start  modifying FindClusters and then move onto FindNeighbors.
+
+### FindClusters. Changing Resolution
+
+The main aspect in FindClusters is the resolution you can use, which is a value that goes from 0 to 1. I will do the clustering changing the resolution, so you can see what it does to the UMAP. Resolution, as the name implies, will mainly give us a number of clusters depending how high we set it up to be (higher res, higher number of clusters)
+
+```{r resolution, fig.height=15, fig.width=15, echo=FALSE}
+
+res <- c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+n <- as.data.frame(list(c(1:9)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(res)){
+
+  Liver <- FindClusters(Liver, resolution = res[i], algorithm = 1, verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("Resolution",res[i]))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p5 <- CombinePlots(plots = myplots, ncol = 3)
+p5
+
+```
+
+To move forward I set up resolution between 0.2 and 0.3, since this is where I tend to get 7 clusters. The size of each cluster varies slightly depending on the values taken there.
+
+```{r resolution2, fig.height=15, fig.width=15, echo=FALSE}
+
+res <- c(0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29)
+n <- as.data.frame(list(c(1:9)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(res)){
+
+  Liver <- FindClusters(Liver, resolution = res[i], algorithm = 1, verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("Resolution",res[i]))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p6 <- CombinePlots(plots = myplots, ncol = 3)
+p6
+
+```
+I will narrow it down to res = 0.26, since it gives a good C0 spread, and the tip cell cluster looks good as well. However the proliferating cluster looks small (C6). As an example of how unpredictable clustering algorithms can be, you can take a look at how res=0.25 has 8 clusters assigned while res=0.26 and 0.27 only have 7, even though it is a lower resolution (why this happens, I cannot tell)
+
+### FindClusters. Changing the Clustering Algorithm
+
+One main aspect of FindClusters is the algorithms it can use, there are four different ones that Seurat provides us with. From the package: "Algorithm for modularity optimization (1 = original Louvain algorithm; 2 = Louvain algorithm with multilevel refinement; 3 = SLM algorithm; 4 = Leiden algorithm). Leiden requires the leidenalg python."
+
+Here with res=0.26
+
+```{r clusteringalgorithm, fig.height= 10, fig.width=10, echo=FALSE}
+
+alg <- c(1, 2, 3, 4)
+n <- as.data.frame(list(c(1:4)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(alg)){
+
+  Liver <- FindClusters(Liver, resolution = 0.26, algorithm = alg[i], verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("Algorithm",alg[i]))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p7 <- CombinePlots(plots = myplots, ncol = 2)
+p7
+
+```
+
+And here with res=0.25
+
+```{r clusteringalgorithm2, fig.height= 10, fig.width=10, echo=FALSE}
+
+alg <- c(1, 2, 3, 4)
+n <- as.data.frame(list(c(1:4)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(alg)){
+
+  Liver <- FindClusters(Liver, resolution = 0.25, algorithm = alg[i], verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("Algorithm",alg[i]))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p8 <- CombinePlots(plots = myplots, ncol = 2)
+p8
+
+```
+With res =0.25 you can see that some algorithms give us 7 instead of 8 clusters. But overall I think I will stick to the main one used by default, which is the original Louvain algorithm (Algorithm 1). An I will go with res = 0.26.
+
+
+## FindNeighbors. Setting up the rules of Clustering
+
+The other key function, and the trickier one, is FindNeighbors. This one has a lot of settings that help you "make the rules" for the clustering algortihms that follow it. 
+
+There are many settings here, and they are quite hard to grasp. For that reason I only looked at the 4 most important ones (and also the ones I understood correctly), them being: dims, prune.SNN, k.param and n.trees.
+
+### FindNeighbors. Dimensions
+
+I will start with the simplests one, dimensions. These dimesnions are the same ones used for making the UMAP (ie the different PCs). You do not have to use the same amount of dimensions for doing the Clustering than also for building the UMAP (I have used 6 here), however it would be the logical thing to do.
+
+I will try the FindNeighbors algorithm with different dimensions and see what I get.
+
+```{r dimensions, fig.height=15, fig.width=15, echo=FALSE}
+
+dims <- c(4, 5, 6, 7, 8, 9, 10, 11, 12)
+n <- as.data.frame(list(c(1:9)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(dims)){
+
+  Liver <- FindNeighbors(Liver, dims = 1:dims[i], verbose = F)
+  Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("Dimensions",dims[i]))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p9 <- CombinePlots(plots = myplots, ncol = 3)
+p9
+
+```
+
+```{r dimensions2, fig.height=15, fig.width=15, echo=FALSE}
+
+dims <- c(13, 14, 15, 16, 17, 18, 19, 20, 21)
+n <- as.data.frame(list(c(1:9)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(dims)){
+
+  Liver <- FindNeighbors(Liver, dims = 1:dims[i], verbose = F)
+  Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("Dimensions",dims[i]))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p10 <- CombinePlots(plots = myplots, ncol = 3)
+p10
+
+```
+
+It gets messier the further you go into higher dimensions, mainly because they do not correlate with the plot the clustering is being built on. I would say that I should keep the 6 dimensions, just like the ones I used for building up the UMAP.
+
+### FindNeighbors. prune.SNN
+
+Another setting is prune.SNN which is, like the name implies, an automatic pruning of outliers. The higher the pruning the "rounder" and "smaller" the clusters, let's say. But It is impredictable in some ways. By default Seurat give a pruning of 1/15
+
+```{r prune.SNN, fig.height=15, fig.width=15, echo=FALSE}
+prune <- c(1/3, 1/4, 1/5, 1/6, 1/7, 1/8, 1/9, 1/10, 1/11)
+n <- as.data.frame(list(c(1:9)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(prune)){
+
+  Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = prune[i], verbose = F)
+  Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("prune.SNN",fractions(prune[i])))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p11 <- CombinePlots(plots = myplots, ncol = 3)
+p11
+
+```
+
+```{r prune.SNN2, fig.height=15, fig.width=15, echo=FALSE}
+prune <- c(1/12, 1/13, 1/14, 1/15, 1/16, 1/17, 1/18, 1/19, 1/20)
+n <- as.data.frame(list(c(1:9)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(prune)){
+
+  Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = prune[i], verbose = F)
+  Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("prune.SNN",fractions(prune[i])))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p12 <- CombinePlots(plots = myplots, ncol = 3)
+p12
+
+```
+
+```{r prune.SNN3, fig.height=15, fig.width=15, echo=FALSE}
+prune <- c(1/30, 1/40, 1/50, 1/60, 1/70, 1/80, 1/90, 1/100, 1/110)
+n <- as.data.frame(list(c(1:9)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(prune)){
+
+  Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = prune[i], verbose = F)
+  Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("prune.SNN",fractions(prune[i])))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p13 <- CombinePlots(plots = myplots, ncol = 3)
+p13
+
+```
+
+Now things will start getting complicated, since the interplay of pruning with k.param and n.trees is not something that can be predicted with accuracy. For now I can see that the Seurat pruning works well and that I should keep values around there (1/15).
+
+### FindNeighbors. k.param
+
+Standard from Seurat is 20. This parameter is defined as: "k' in KNN is a parameter that refers to the number of nearest neighbours to include in the majority of the voting process. ... Let's say k = 5 and the new data point is classified by the majority of votes from its five neighbours and the new point would be classified as red since four out of five neighbours are red." So it is a consensus parameter, the higher the number, the higher the consensus needed to assing one cell to a cluster, which translates to Higher reaching consensus, less number of total clusters.
+
+```{r kparam, fig.height=15, fig.width=15, echo=FALSE}
+kparam <- c(10, 20, 30, 40, 50, 60, 70, 80, 90)
+n <- as.data.frame(list(c(1:9)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(kparam)){
+
+  Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = 1/15, k.param = kparam[i], verbose = F)
+  Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("k.param",kparam[i]))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p14 <- CombinePlots(plots = myplots, ncol = 3)
+p14
+
+```
+
+It seems that with the previous settings I should also keep k.param at 20, the rest are not helping much
+
+### FindNeighbors. n.trees
+
+n trees adresses the number of levels when doing the neighbor search, higher number of trees, higher precission. By default Seurat uses 50 as the unit.
+
+```{r n.trees, fig.height=15, fig.width=15, echo=FALSE}
+ntrees <- c(10, 20, 30, 40, 50, 60, 70, 80, 90)
+n <- as.data.frame(list(c(1:9)))
+
+
+myplots <- vector('list', nrow(n))
+
+
+for (i in 1:length(ntrees)){
+
+  Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = 1/15, k.param = 20, n.trees = ntrees[i], verbose = F)
+  Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+  myplots[[i]] <- local({
+    i <- i
+    p1 <- DimPlot(Liver, label = T, label.size = 8)+ NoAxes() + NoLegend() + ggtitle(paste("n.trees",ntrees[i]))+ theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+}
+
+p15 <- CombinePlots(plots = myplots, ncol = 3)
+p15
+
+```
+n.trees 40 and 60 loook the same, and better than n.trees, strangely enough. I will set it to n.trees = 60.
+
+## Clustering Conclusions. Final Settings
+
+So after all this quick overview into different settings I can play out with I concluded that:
+
+FindClusters : res=0.26, algorithm=1
+
+FindNeighbors : dims=1:6, prune.SNN=1/15, k.param=20, n.trees = 60
+
+This is how it would look like
+
+```{r conclusion, fig.asp=0.8, echo=FALSE}
+
+Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = 1/15, n.trees = 60, k.param = 20, verbose = F)
+
+Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+
+DimPlot(Liver, label = T, label.size = 8, pt.size = 2)+ NoAxes() + NoLegend()
+
+```
+
+Split by Condition
+
+```{r conclusion-a, fig.height=5, fig.width=30, echo=FALSE}
+
+
+DimPlot(Liver, label = T, split.by = "Condition", pt.size = 1.2)+ NoAxes()
+
+```
+
+I will also leave you with the previous clustering I set up, where I went for a bigger clustering in the proliferating region here the settings where:
+
+FindClusters: resolution = 0.26, algorithm = 1
+
+FindNeighbors: dims = 1:6, prune.SNN = 1/7, n.trees = 50, k.param = 50
+
+```{r conclusion2, fig.asp=0.8, echo=FALSE}
+
+Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = 1/7, n.trees = 50, k.param = 50, verbose = F)
+
+Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+
+DimPlot(Liver, label = T, label.size = 8, pt.size = 2)+ NoAxes() + NoLegend()
+
+```
+
+Split by Condition
+
+```{r conclusion2-a, fig.height=5, fig.width=30, echo=FALSE}
+
+DimPlot(Liver, label = T, split.by = "Condition", pt.size = 1.2)+ NoAxes()
+
+```
+
+And now the Clustering that Macarena likes the most:
+
+FindClusters : res=0.26, algorithm=1
+
+FindNeighbors : dims=1:6, prune.SNN=1/15, k.param=20, n.trees = 50
+
+```{r conclusion3, fig.asp=0.8, echo=FALSE}
+
+Liver <- FindNeighbors(Liver, dims = 1:6, prune.SNN = 1/15, n.trees = 50, k.param = 20, verbose = F)
+
+Liver <- FindClusters(Liver, resolution = 0.26, algorithm = 1, verbose = F)
+
+DimPlot(Liver, label = T, label.size = 8, pt.size = 2)+ NoAxes() + NoLegend()
+
+```
+
+Split by Condition
+
+```{r conclusion3-a, fig.height=5, fig.width=30, echo=FALSE}
+
+DimPlot(Liver, label = T, split.by = "Condition", pt.size = 1.2)+ NoAxes()
+
+```
+
+# Conclusion
+
+Automatic clustering is a tricky thing to master and it takes a lot of trial an error to get the desired clustering. However it is very important to get it right since the rest of the analysis will be always based on the clusters that were identified. I think it is good to reduce the number of automatic clusters to 7, and I personally would make the proliferating cluster smaller than what Carlos showed, while also making the Tip Cell cluster bigger. I said this because in most iterations I always get that, either the tip cell cluster gets bigger at the cost of the proliferating cluster or viceversa.
+
+Also I try to have C0 go across the AV zonation, without C1 interfering, or any other clusters.
+
+If you consider that there is a lot of intermingling of cells among clusters compared to what Carlos has given you before, the only reason I can think for that is that I am plotting the UMAP with one less dimension, making it more "dispersed" than what Carlos had. However I do not think that it is a severe case, specialle when we consider that I added 50% of extra cells with a present batch effect compared to what we had before.
+
+# Appendix. FeaturePlots of marker genes
+
+```{r featureplot, fig.width=21, fig.height= 42, echo=FALSE}
+genes <- list(c("ODC1", "KCNE3", "MKI67", "WNT2", "MSR1", "LTBP4", "RSPO3", "GJA5", "CDKN1A", "STMN1", "VEGFA", "ESM1", "HES1", "MYC"))
+genes <- as.data.frame(genes)
+
+
+#  Script
+
+myplots <- vector('list', nrow(genes))
+
+
+for (i in 1:nrow(genes)) {
+  
+  p21 <- FeaturePlot(Liver, features = genes[i, 1], combine = F, pt.size = 1.5)
+
+  p22 <- FeaturePlot(Liver, split.by = "Condition", features = genes[i, 1], combine = F, pt.size = 1.5, keep.scale = "all")
+
+  p21 <- lapply(X = p21, FUN = function(p) p + NoLegend() + NoAxes())
+
+  p22 <- lapply(X = p22, FUN = function(p) p + NoLegend() + NoAxes())
+
+  p21 <- Reduce( `+`, p21 )+patchwork::plot_layout( ncol = 1 )
+
+  p22 <- Reduce( `+`, p22 )+patchwork::plot_layout( ncol = 6 )
+
+  p23 <- list(p21, p22)
+
+
+  design <- c(patchwork::area(1, 1, 1, 1), patchwork::area(1, 2, 1, 7))
+
+  p24 <- Reduce( `+`,  p23)+patchwork::plot_layout(design = design)
+
+  
+  myplots[[i]] <- local({
+    i <- i
+    p24
+  })
+  
+  
+}
+
+p25 <- CombinePlots(plots = myplots, ncol = 1)
+p25
+```
+
+
+# Appendix. Carlos Original UMAP and Clusters
+
+I leave Carlos plots so you can make a quick comparison
+
+![Carlos_UMAP](../Plots/Rui_Comparisons/UMAP_Carlos_settings_res_0.35.png)
+
+![Carlos_UMAP_New_Clustering](../Plots/Rui_Comparisons/UMAP_Carlos_NewClustering.png)
+
+```{r session, echo=FALSE}
+sessionInfo()
+```

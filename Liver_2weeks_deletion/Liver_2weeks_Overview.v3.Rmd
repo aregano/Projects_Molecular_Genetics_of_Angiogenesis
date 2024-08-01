@@ -1,0 +1,187 @@
+---
+title: "Liver_2weeks_Overview.v3"
+author: "Alvaro Regano"
+date: "29/11/2021"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+#knitr::opts_knit$set(root.dir= normalizePath('..'))
+#knitr::opts_chunk$set(error = FALSE)
+options(width = 9000)
+
+```
+
+```{r library, echo=FALSE}
+library(Seurat)
+library(ggplot2)
+library("knitr")
+library("rmarkdown")
+library("yaml")
+library("patchwork")
+```
+
+# Liver 2 week deletion. Final UMAP. Gene conditions
+
+After performing some optimizations on the UMAP and concluding with the best UMAP, I will plot the genes and different conditions on top, and check that they look good
+
+
+
+```{r UMAPdim7, fig.asp=0.8, echo=FALSE}
+
+Liver <- readRDS("../rds/Liver_2wdeletion.v3.ECs.rds")
+
+
+p1 <- DimPlot(Liver, reduction = "umap_6d_0.2dist_100n", label = T, pt.size = 2, label.size = 12)
+p1
+
+p2 <- DimPlot(Liver, label = T, reduction = "umap_6d_0.2dist_100n", group.by = "NewClustering",pt.size = 2, label.size = 12)
+p2
+
+```
+
+You can also see that C0a is closer to C6a and the same with C6v and C0v, which is good news.
+
+```{r UMAPdim7split, fig.width=30, fig.height= 5, echo=FALSE}
+
+p3 <- DimPlot(Liver, reduction = "umap_6d_0.2dist_100n", split.by = "Condition", label = T, label.size = 5, pt.size = 1.5)
+p3
+
+```
+
+```{r UMAPdim7split2, fig.width=30, fig.height= 10, echo=FALSE}
+
+p4 <- DimPlot(Liver, reduction = "umap_6d_0.2dist_100n", group.by = "NewClustering", split.by = "Condition", label = T, label.size = 5, pt.size = 1.5)
+p4
+
+```
+
+Moving onto the target genes.
+
+
+
+```{r geneUMAP7dim, fig.width=30, fig.height= 65, echo=FALSE}
+genes <- list(c("ODC1", "KCNE3", "MKI67", "WNT2", "MSR1", "LTBP4", "RSPO3", "GJA5", "CDKN1A", "STMN1", "VEGFA", "ESM1", "HES1"))
+genes <- as.data.frame(genes)
+
+
+#  Script
+
+myplots <- vector('list', nrow(genes))
+
+
+for (i in 1:nrow(genes)) {
+  
+  p1 <- FeaturePlot(Liver, features = genes[i, 1], reduction = "umap_6d_0.2dist_100n", split.by = "Condition", combine = F, pt.size = 1.5)
+  
+  p2 <- lapply(X = p1, FUN = function(p) p + NoLegend() + NoAxes())
+  
+  p3 <- Reduce( `+`, p2 )+patchwork::plot_layout( ncol = 6 )
+ 
+  myplots[[i]] <- local({
+    i <- i
+    p3
+  })
+              
+  
+}
+
+p4 <- CombinePlots(plots = myplots, ncol = 1)
+p4
+
+```
+
+
+GJA5 and RSPO3 are giving a good spread of the AV zonation. ODC1 and KCNE3 move onto the Tip Cell region that is where most Dll4KO cells are located. MSR1 is also giving a good indication of where are capillary artherial cells v Capillary Venous. p21 is everywhere . MKI67 and STMN1 are located in the proliferating region.
+
+
+## Differentiating Dll4/MycKO from Jag1/Jag2/Dll1KO
+
+The two new conditions cluster very simillarly, so I have quickly run a DE analysis of Dll4/MycKOvJag1/Jag2/Dll1KO and saw that, for Dll4/Myc, it is HPGD, FABP5 and LGALS1 the upregulated markers and for the triple mutant it is XIST, DLL4 (obviously, I deleted it everywhere), CD59A and HSPB1. 
+
+```{r geneUMAPDll4MycvJag1Jag2Dll1KO, fig.width=30, fig.height= 45, echo=FALSE}
+genes <- list(c("HPGD", "FABP5", "LGALS1", "GM10260", "XIST", "HSPB1", "CD59A", "CD34", "EDNRB"))
+genes <- as.data.frame(genes)
+
+
+#  Script
+
+myplots <- vector('list', nrow(genes))
+
+
+for (i in 1:nrow(genes)) {
+  
+  p1 <- FeaturePlot(Liver, features = genes[i, 1], reduction = "umap_6d_0.2dist_100n", split.by = "Condition", combine = F, pt.size = 1.5)
+  
+  p2 <- lapply(X = p1, FUN = function(p) p + NoLegend() + NoAxes())
+  
+  p3 <- Reduce( `+`, p2 )+patchwork::plot_layout( ncol = 6 )
+ 
+  myplots[[i]] <- local({
+    i <- i
+    p3
+  })
+              
+  
+}
+
+p4 <- CombinePlots(plots = myplots, ncol = 1)
+p4
+
+```
+
+The best ones I see are HSPB1(chaperone), GM10260(ribosomal, I do not think it is very relevant), and XIST(X chromosome silencing, only seen on female mice, both in the triple mutant and only one on Dll4/MycKO. The rest of the mice were male).
+
+There are not that many DE genes among the two conditions, only 447 between both groups. However I can see WNT2, ODC1, p21, PDGFB, LTBP4, CD34 and EDNRB
+
+## Making sure Jag1/Jag2/Dll1KO and Dll4/MycKO groups have been correctly assigned
+ 
+ To make sure that the groups have been rightly assigned I will check the KO genes + a few markers
+
+```{r geneUMAPJagDll, fig.width=30, fig.height= 45, echo=FALSE}
+genes <- list(c("JAG1", "JAG2", "DLL1", "DLL4", "MYC", "ODC1", "NTN4", "EFNB2", "MSR1"))
+genes <- as.data.frame(genes)
+ 
+
+#  Script
+
+myplots <- vector('list', nrow(genes))
+
+
+for (i in 1:nrow(genes)) {
+  
+  p1 <- FeaturePlot(Liver, features = genes[i, 1], reduction = "umap_6d_0.2dist_100n", split.by = "Condition", combine = F, pt.size = 1.5, keep.scale = "all")
+  
+  p2 <- lapply(X = p1, FUN = function(p) p + NoLegend() + NoAxes())
+  
+  p3 <- Reduce( `+`, p2 )+patchwork::plot_layout( ncol = 6 )
+ 
+  myplots[[i]] <- local({
+    i <- i
+    p3
+  })
+              
+  
+}
+
+p4 <- CombinePlots(plots = myplots, ncol = 1)
+p4
+
+```
+
+Jag1 and Dll1 look good in order to confirm the Jag1/Jag2/Dll1 group. Dll4 expressing cells have been taken out from Dll4/MycKO (full homogeneous purple color) and both myc and odc1 have control levels similar to the COntrol Group.
+
+```{r session, ,echo=FALSE}
+
+sessionInfo()
+
+```
